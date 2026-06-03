@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:vtuber_radar/models/organization.dart';
-import 'package:vtuber_radar/models/search_result.dart';
-import 'package:vtuber_radar/services/search_api.dart';
+import 'package:uuid/uuid.dart';
+import '../models/organization.dart';
+import '../models/search_result.dart';
+import '../models/radar_config.dart';
+import '../services/search_api.dart';
+import '../services/radar_storage.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -113,6 +116,82 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       }
     }
+  }
+
+  Future<void> _saveRadarConfig() async {
+    String keyword = _keywordController.text.trim();
+    List<String> selectedOrgIds = _selectedOrgs.entries
+        .where((entry) => entry.value)
+        .map((entry) => entry.key)
+        .toList();
+
+    if (keyword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入搜索关键词')),
+      );
+      return;
+    }
+
+    if (selectedOrgIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请至少选择一个组织')),
+      );
+      return;
+    }
+
+    TextEditingController nameController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('保存雷达'),
+          content: TextField(
+            controller: nameController,
+            decoration: const InputDecoration(
+              labelText: '雷达名称',
+              hintText: '请输入雷达名称',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                String name = nameController.text.trim();
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('请输入雷达名称')),
+                  );
+                  return;
+                }
+
+                final config = RadarConfig(
+                  id: const Uuid().v4(),
+                  name: name,
+                  keyword: keyword,
+                  selectedOrgIds: selectedOrgIds,
+                  startDate: _startDate,
+                  endDate: _endDate,
+                  createdAt: DateTime.now(),
+                );
+
+                await RadarStorage.saveRadarConfig(config);
+                
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('雷达保存成功')),
+                );
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildHighlightedText(String text, String pinyin, String keyword) {
@@ -241,17 +320,29 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _onSearch,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _onSearch,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator()
+                        : const Text('搜索'),
+                  ),
                 ),
-                child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('搜索'),
-              ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _saveRadarConfig,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                    backgroundColor: Colors.green,
+                  ),
+                  child: const Text('保存雷达'),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             if (_errorMessage != null)

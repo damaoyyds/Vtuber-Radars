@@ -4,6 +4,7 @@ import '../models/radar_config.dart';
 
 class RadarStorage {
   static const String _key = 'vtuber_radar_configs';
+  static const String _lastAutoSearchKey = 'last_auto_search_time';
 
   static Future<List<RadarConfig>> getRadarConfigs() async {
     final prefs = await SharedPreferences.getInstance();
@@ -34,5 +35,19 @@ class RadarStorage {
     configs.removeWhere((c) => c.id == id);
     final jsonString = json.encode(configs.map((c) => c.toJson()).toList());
     await prefs.setString(_key, jsonString);
+  }
+
+  static Future<DateTime?> getLastAutoSearchTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final timeString = prefs.getString(_lastAutoSearchKey);
+    if (timeString == null) {
+      return null;
+    }
+    return DateTime.parse(timeString);
+  }
+
+  static Future<void> setLastAutoSearchTime(DateTime time) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastAutoSearchKey, time.toIso8601String());
   }
 }

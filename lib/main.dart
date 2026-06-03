@@ -65,6 +65,40 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _radarConfigs = configs;
     });
+    _checkAndRunAutoSearch();
+  }
+
+  Future<void> _checkAndRunAutoSearch() async {
+    final now = DateTime.now();
+    final lastAutoSearchTime = await RadarStorage.getLastAutoSearchTime();
+    final lastDate = lastAutoSearchTime ?? DateTime(2020);
+
+    for (var radar in _radarConfigs) {
+      if (radar.isAutoSearch && radar.isAutoSearchEnabled) {
+        // 计算今天的预定搜索时间
+        final todayScheduledTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          radar.autoSearchHour,
+          radar.autoSearchMinute,
+        );
+
+        // 检查是否已经执行过今天的自动搜索
+        final alreadyRanToday = lastDate.year == now.year &&
+            lastDate.month == now.month &&
+            lastDate.day == now.day;
+
+        // 如果当前时间已过设定时间，且今天还未执行，则执行搜索
+        if (!alreadyRanToday && now.isAfter(todayScheduledTime)) {
+          // 执行搜索
+          _searchWithRadar(radar);
+
+          // 更新最后执行时间
+          await RadarStorage.setLastAutoSearchTime(now);
+        }
+      }
+    }
   }
 
   void _onApplyRadar(RadarConfig config) {
@@ -318,6 +352,7 @@ class _MainScreenState extends State<MainScreen> {
               onDelete: () => _deleteRadar(radar.id),
               onSearch: () => _searchWithRadar(radar),
               onToggleAutoSearch: radar.isAutoSearch ? () => _toggleAutoSearch(radar) : null,
+              onDoubleTap: () => _showEditRadarDialog(radar),
               isSelected: _isSelectMode && _selectedRadarIds.contains(radar.id),
               showCheckbox: _isSelectMode,
             );
@@ -428,6 +463,7 @@ class _MainScreenState extends State<MainScreen> {
       );
 
       setState(() {
+        _messages.removeWhere((m) => m.radarName == radar.name && m.type == MessageType.searching);
         _messages.insert(0, Message(
           id: const Uuid().v4(),
           radarName: radar.name,
@@ -435,7 +471,7 @@ class _MainScreenState extends State<MainScreen> {
           type: MessageType.searchComplete,
           text: '搜索完成，找到 ${result.items.length} 条结果',
         ));
-        for (var item in result.items.take(5)) {
+        for (var item in result.items) {
           _messages.insert(0, Message(
             id: const Uuid().v4(),
             radarName: radar.name,
@@ -446,7 +482,7 @@ class _MainScreenState extends State<MainScreen> {
         }
       });
 
-      Navigator.pushReplacement(
+      Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => ChatDetailPage(
@@ -578,6 +614,34 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _showEditRadarDialog(RadarConfig radar) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _CreateRadarDialog(
+          radar: radar,
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, autoHour, autoMinute) async {
+            final updatedConfig = RadarConfig(
+              id: radar.id,
+              name: name,
+              keyword: keyword,
+              selectedOrgIds: orgIds,
+              startDate: startDate,
+              endDate: endDate,
+              createdAt: radar.createdAt,
+              isAutoSearch: isAutoSearch,
+              autoSearchHour: autoHour,
+              autoSearchMinute: autoMinute,
+              isAutoSearchEnabled: radar.isAutoSearchEnabled,
+            );
+            await RadarStorage.saveRadarConfig(updatedConfig);
+            await _loadRadarConfigs();
+          },
+        );
+      },
+    );
+  }
+
   void _toggleAutoSearch(RadarConfig radar) async {
     final updatedRadar = radar.copyWith(
       isAutoSearchEnabled: !radar.isAutoSearchEnabled,
@@ -589,10 +653,12 @@ class _MainScreenState extends State<MainScreen> {
 
 class _CreateRadarDialog extends StatefulWidget {
   final Function(String, String, List<String>, DateTime, DateTime, bool, int, int) onSave;
+  final RadarConfig? radar;
 
   const _CreateRadarDialog({
     super.key,
     required this.onSave,
+    this.radar,
   });
 
   @override
@@ -603,11 +669,11 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _keywordController = TextEditingController();
   final Map<String, bool> _selectedOrgs = {};
-  DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
-  DateTime _endDate = DateTime.now();
-  bool _isAutoSearch = false;
-  int _autoSearchHour = 9;
-  int _autoSearchMinute = 0;
+  late DateTime _startDate;
+  late DateTime _endDate;
+  late bool _isAutoSearch;
+  late int _autoSearchHour;
+  late int _autoSearchMinute;
 
   @override
   void initState() {
@@ -615,6 +681,25 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
     organizations.forEach((key, value) {
       _selectedOrgs[key] = false;
     });
+
+    if (widget.radar != null) {
+      _nameController.text = widget.radar!.name;
+      _keywordController.text = widget.radar!.keyword;
+      _startDate = widget.radar!.startDate ?? DateTime.now().subtract(const Duration(days: 30));
+      _endDate = widget.radar!.endDate ?? DateTime.now();
+      _isAutoSearch = widget.radar!.isAutoSearch;
+      _autoSearchHour = widget.radar!.autoSearchHour;
+      _autoSearchMinute = widget.radar!.autoSearchMinute;
+      for (var orgId in widget.radar!.selectedOrgIds) {
+        _selectedOrgs[orgId] = true;
+      }
+    } else {
+      _startDate = DateTime.now().subtract(const Duration(days: 30));
+      _endDate = DateTime.now();
+      _isAutoSearch = false;
+      _autoSearchHour = 9;
+      _autoSearchMinute = 0;
+    }
   }
 
   Future<void> _showDatePicker({required bool isStart}) async {
@@ -668,14 +753,16 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
     widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, _autoSearchHour, _autoSearchMinute);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('雷达创建成功')),
+      SnackBar(content: Text(widget.radar != null ? '雷达修改成功' : '雷达创建成功')),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.radar != null;
+
     return AlertDialog(
-      title: const Text('新建雷达'),
+      title: Text(isEditing ? '编辑雷达' : '新建雷达'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -834,22 +921,19 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: DropdownButtonFormField<int>(
-                          value: _autoSearchMinute,
-                          items: [0, 15, 30, 45].map((minute) {
-                            return DropdownMenuItem(
-                              value: minute,
-                              child: Text('${minute.toString().padLeft(2, '0')} 分'),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _autoSearchMinute = value ?? 0;
-                            });
-                          },
+                        child: TextFormField(
+                          initialValue: _autoSearchMinute.toString().padLeft(2, '0'),
+                          keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
+                            hintText: '分 (0-59)',
                           ),
+                          onChanged: (value) {
+                            int? minute = int.tryParse(value);
+                            if (minute != null && minute >= 0 && minute <= 59) {
+                              _autoSearchMinute = minute;
+                            }
+                          },
                         ),
                       ),
                     ],
@@ -866,7 +950,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
         ),
         TextButton(
           onPressed: _handleSave,
-          child: const Text('创建'),
+          child: Text(isEditing ? '保存' : '创建'),
         ),
       ],
     );

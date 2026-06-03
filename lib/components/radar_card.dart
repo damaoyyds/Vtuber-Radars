@@ -4,28 +4,45 @@ import '../theme/app_theme.dart';
 
 class RadarCard extends StatelessWidget {
   final RadarConfig radar;
-  final bool isLive;
-  final int viewerCount;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onSearch;
+  final VoidCallback? onToggleAutoSearch;
+  final bool showCheckbox;
+  final bool isSelected;
 
   const RadarCard({
     super.key,
     required this.radar,
-    this.isLive = false,
-    this.viewerCount = 0,
     required this.onTap,
     required this.onDelete,
+    required this.onSearch,
+    this.onToggleAutoSearch,
+    this.showCheckbox = false,
+    this.isSelected = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: cardDecoration,
+      decoration: cardDecoration.copyWith(
+        border: isSelected
+            ? Border.all(color: primaryColor, width: 2)
+            : cardDecoration.border,
+      ),
       padding: const EdgeInsets.all(20),
       margin: const EdgeInsets.only(bottom: 16),
       child: Row(
         children: [
+          if (showCheckbox)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Checkbox(
+                value: isSelected,
+                onChanged: (_) => onTap(),
+                activeColor: primaryColor,
+              ),
+            ),
           const CircleAvatar(
             radius: 32,
             backgroundImage: NetworkImage(
@@ -48,15 +65,15 @@ class RadarCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    if (isLive)
+                    if (radar.isAutoSearch)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: statusLive,
+                          color: primaryColor,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Text(
-                          '正在直播',
+                          '自动搜索',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.white,
@@ -68,9 +85,7 @@ class RadarCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isLive
-                      ? '正在直播中 · ${viewerCount}k 人观看'
-                      : '关键词: ${radar.keyword}',
+                  '关键词: ${radar.keyword}',
                   style: const TextStyle(
                     fontSize: 14,
                     color: textSecondary,
@@ -79,41 +94,48 @@ class RadarCard extends StatelessWidget {
               ],
             ),
           ),
-          Stack(
-            children: [
-              _buildRadarVisual(isLive),
-              IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: onDelete,
-                padding: const EdgeInsets.all(8),
+          if (radar.isAutoSearch && onToggleAutoSearch != null)
+            GestureDetector(
+              onTap: onToggleAutoSearch,
+              child: Container(
+                width: 60,
+                height: 36,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  color: radar.isAutoSearchEnabled ? statusLive : Colors.grey[300],
+                ),
+                child: Container(
+                  margin: EdgeInsets.only(left: radar.isAutoSearchEnabled ? 26 : 4),
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-            ],
-          ),
+            )
+          else
+            GestureDetector(
+              onTap: onSearch,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const RadialGradient(
+                    colors: [primaryColor, Colors.transparent],
+                    radius: 1,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.radar,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildRadarVisual(bool isLive) {
-    return Container(
-      width: 60,
-      height: 60,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: isLive
-            ? const RadialGradient(
-                colors: [statusLive, Colors.transparent],
-                radius: 1,
-              )
-            : const RadialGradient(
-                colors: [primaryColor, Colors.transparent],
-                radius: 1,
-              ),
-      ),
-      child: const Icon(
-        Icons.radar,
-        color: Colors.white,
-        size: 24,
       ),
     );
   }

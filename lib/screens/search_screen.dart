@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import 'package:uuid/uuid.dart';
 import '../models/organization.dart';
 import '../models/search_result.dart';
@@ -106,9 +106,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _launchUrl(String url) async {
-    Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+    if (await canLaunchUrlString(url)) {
+      await launchUrlString(url);
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

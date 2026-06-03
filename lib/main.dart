@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 import 'package:uuid/uuid.dart';
 import './theme/app_theme.dart';
 import './components/bottom_navigation.dart';
@@ -8,8 +8,10 @@ import './components/radar_card.dart';
 import './models/radar_config.dart';
 import './models/organization.dart';
 import './models/search_result.dart';
+import './models/message.dart';
 import './services/search_api.dart';
 import './services/radar_storage.dart';
+import './screens/chat_detail_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -43,6 +45,9 @@ class _MainScreenState extends State<MainScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   List<RadarConfig> _radarConfigs = [];
+  bool _isSelectMode = false;
+  Set<String> _selectedRadarIds = {};
+  List<Message> _messages = [];
 
   @override
   void initState() {
@@ -116,15 +121,151 @@ class _MainScreenState extends State<MainScreen> {
               _endDate = end;
             });
           },
-          onSaveRadar: () {
-            _showSaveRadarDialog();
-          },
         );
       case 2:
+        return _buildMessagePage();
+      case 3:
         return _buildProfilePage();
       default:
         return _buildRadarPage();
     }
+  }
+
+  Widget _buildMessagePage() {
+    Map<String, List<Message>> groupedMessages = {};
+    for (var msg in _messages) {
+      if (!groupedMessages.containsKey(msg.radarName)) {
+        groupedMessages[msg.radarName] = [];
+      }
+      groupedMessages[msg.radarName]!.add(msg);
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          const SizedBox(height: 60),
+          if (groupedMessages.isEmpty)
+            Container(
+              decoration: cardDecoration,
+              padding: const EdgeInsets.all(20),
+              margin: const EdgeInsets.only(bottom: 16),
+              child: const Column(
+                children: [
+                  Icon(
+                    Icons.inbox,
+                    size: 64,
+                    color: textTertiary,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    '暂无消息',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...groupedMessages.entries.map((entry) {
+              String radarName = entry.key;
+              List<Message> radarMessages = entry.value;
+              Message latestMsg = radarMessages.first;
+              
+              return _buildConversationItem(radarName, radarMessages, latestMsg);
+            }).toList(),
+          const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConversationItem(String radarName, List<Message> messages, Message latestMsg) {
+    int unreadCount = messages.where((m) => m.type != MessageType.searching).length;
+    
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatDetailPage(
+                radarName: radarName,
+                messages: List.from(messages),
+              ),
+            ),
+          );
+      },
+      child: Container(
+        decoration: cardDecoration,
+        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: primaryColor.withOpacity(0.1),
+              child: const Icon(Icons.radar, color: primaryColor, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    radarName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    latestMsg.text ?? (latestMsg.clipItem != null ? '搜索到新结果' : ''),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: textSecondary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${latestMsg.timestamp.hour.toString().padLeft(2, '0')}:${latestMsg.timestamp.minute.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: textTertiary,
+                  ),
+                ),
+                if (unreadCount > 0)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.all(Radius.circular(10)),
+                    ),
+                    child: Text(
+                      unreadCount > 99 ? '99+' : unreadCount.toString(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildRadarPage() {
@@ -134,13 +275,26 @@ class _MainScreenState extends State<MainScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 60),
-          const Text(
-            '我的雷达',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                '我的雷达',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: textPrimary,
+                ),
+              ),
+              if (_radarConfigs.isNotEmpty)
+                TextButton(
+                  onPressed: _toggleSelectMode,
+                  child: Text(
+                    _isSelectMode ? '取消' : '编辑',
+                    style: const TextStyle(color: primaryColor),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           const Text(
@@ -154,23 +308,170 @@ class _MainScreenState extends State<MainScreen> {
           ..._radarConfigs.map((radar) {
             return RadarCard(
               radar: radar,
-              isLive: radar.name.contains('1'),
-              viewerCount: 2300,
-              onTap: () => _onApplyRadar(radar),
+              onTap: () {
+                if (_isSelectMode) {
+                  _toggleRadarSelection(radar.id);
+                } else {
+                  _onApplyRadar(radar);
+                }
+              },
               onDelete: () => _deleteRadar(radar.id),
+              onSearch: () => _searchWithRadar(radar),
+              onToggleAutoSearch: radar.isAutoSearch ? () => _toggleAutoSearch(radar) : null,
+              isSelected: _isSelectMode && _selectedRadarIds.contains(radar.id),
+              showCheckbox: _isSelectMode,
             );
           }),
           AddRadarCard(
-            onTap: () {
-              setState(() {
-                _selectedIndex = 1;
-              });
-            },
+            onTap: () => _showCreateRadarDialog(),
           ),
+          if (_isSelectMode && _selectedRadarIds.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: cardDecoration,
+              child: Row(
+                children: [
+                  Text('已选择 ${_selectedRadarIds.length} 个雷达'),
+                  const Spacer(),
+                  ElevatedButton(
+                    onPressed: _deleteSelectedRadars,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                    ),
+                    child: const Text('删除'),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 100),
         ],
       ),
     );
+  }
+
+  void _toggleSelectMode() {
+    setState(() {
+      _isSelectMode = !_isSelectMode;
+      if (!_isSelectMode) {
+        _selectedRadarIds.clear();
+      }
+    });
+  }
+
+  void _toggleRadarSelection(String radarId) {
+    setState(() {
+      if (_selectedRadarIds.contains(radarId)) {
+        _selectedRadarIds.remove(radarId);
+      } else {
+        _selectedRadarIds.add(radarId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelectedRadars() async {
+    if (_selectedRadarIds.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('确认删除'),
+          content: Text('确定要删除选中的 ${_selectedRadarIds.length} 个雷达吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                for (String id in _selectedRadarIds) {
+                  await RadarStorage.deleteRadarConfig(id);
+                }
+                await _loadRadarConfigs();
+                setState(() {
+                  _isSelectMode = false;
+                  _selectedRadarIds.clear();
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('雷达删除成功')),
+                );
+              },
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _searchWithRadar(RadarConfig radar) async {
+    setState(() {
+      _messages.insert(0, Message(
+        id: const Uuid().v4(),
+        radarName: radar.name,
+        timestamp: DateTime.now(),
+        type: MessageType.searching,
+        text: '搜索中...',
+      ));
+    });
+
+    try {
+      String? startDateStr = radar.startDate?.toIso8601String().split('T')[0];
+      String? endDateStr = radar.endDate?.toIso8601String().split('T')[0];
+
+      SearchResult result = await SearchApi.fetchSearchResults(
+        radar.keyword,
+        radar.selectedOrgIds,
+        startDate: startDateStr,
+        endDate: endDateStr,
+      );
+
+      setState(() {
+        _messages.insert(0, Message(
+          id: const Uuid().v4(),
+          radarName: radar.name,
+          timestamp: DateTime.now(),
+          type: MessageType.searchComplete,
+          text: '搜索完成，找到 ${result.items.length} 条结果',
+        ));
+        for (var item in result.items.take(5)) {
+          _messages.insert(0, Message(
+            id: const Uuid().v4(),
+            radarName: radar.name,
+            timestamp: DateTime.now(),
+            type: MessageType.searchComplete,
+            clipItem: item,
+          ));
+        }
+      });
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatDetailPage(
+            radarName: radar.name,
+            messages: _messages.where((m) => m.radarName == radar.name).toList(),
+          ),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _messages.insert(0, Message(
+          id: const Uuid().v4(),
+          radarName: radar.name,
+          timestamp: DateTime.now(),
+          type: MessageType.searchError,
+          text: '搜索失败: $e',
+        ));
+      });
+    }
+  }
+
+  Future<void> _launchUrl(String? url) async {
+    if (url != null && await canLaunchUrlString(url)) {
+      await launchUrlString(url);
+    }
   }
 
   Widget _buildProfilePage() {
@@ -251,12 +552,104 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  void _showSaveRadarDialog() {
+  void _showCreateRadarDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return _CreateRadarDialog(
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, autoHour, autoMinute) async {
+            final config = RadarConfig(
+              id: const Uuid().v4(),
+              name: name,
+              keyword: keyword,
+              selectedOrgIds: orgIds,
+              startDate: startDate,
+              endDate: endDate,
+              createdAt: DateTime.now(),
+              isAutoSearch: isAutoSearch,
+              autoSearchHour: autoHour,
+              autoSearchMinute: autoMinute,
+            );
+            await RadarStorage.saveRadarConfig(config);
+            await _loadRadarConfigs();
+          },
+        );
+      },
+    );
+  }
+
+  void _toggleAutoSearch(RadarConfig radar) async {
+    final updatedRadar = radar.copyWith(
+      isAutoSearchEnabled: !radar.isAutoSearchEnabled,
+    );
+    await RadarStorage.saveRadarConfig(updatedRadar);
+    await _loadRadarConfigs();
+  }
+}
+
+class _CreateRadarDialog extends StatefulWidget {
+  final Function(String, String, List<String>, DateTime, DateTime, bool, int, int) onSave;
+
+  const _CreateRadarDialog({
+    super.key,
+    required this.onSave,
+  });
+
+  @override
+  State<_CreateRadarDialog> createState() => _CreateRadarDialogState();
+}
+
+class _CreateRadarDialogState extends State<_CreateRadarDialog> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _keywordController = TextEditingController();
+  final Map<String, bool> _selectedOrgs = {};
+  DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _endDate = DateTime.now();
+  bool _isAutoSearch = false;
+  int _autoSearchHour = 9;
+  int _autoSearchMinute = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    organizations.forEach((key, value) {
+      _selectedOrgs[key] = false;
+    });
+  }
+
+  Future<void> _showDatePicker({required bool isStart}) async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: isStart ? _startDate : _endDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _startDate = picked;
+        } else {
+          _endDate = picked;
+        }
+      });
+    }
+  }
+
+  void _handleSave() {
+    String name = _nameController.text.trim();
     String keyword = _keywordController.text.trim();
     List<String> selectedOrgIds = _selectedOrgs.entries
         .where((entry) => entry.value)
         .map((entry) => entry.key)
         .toList();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入雷达名称')),
+      );
+      return;
+    }
 
     if (keyword.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -272,59 +665,210 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
 
-    TextEditingController nameController = TextEditingController();
+    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, _autoSearchHour, _autoSearchMinute);
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('雷达创建成功')),
+    );
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('保存雷达'),
-          content: TextField(
-            controller: nameController,
-            decoration: const InputDecoration(
-              labelText: '雷达名称',
-              hintText: '请输入雷达名称',
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('新建雷达'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: '雷达名称',
+                hintText: '请输入雷达名称',
+              ),
+              autofocus: true,
             ),
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _keywordController,
+              decoration: const InputDecoration(
+                labelText: '搜索关键词',
+                hintText: '请输入搜索关键词',
+              ),
             ),
-            TextButton(
-              onPressed: () async {
-                String name = nameController.text.trim();
-                if (name.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('请输入雷达名称')),
-                  );
-                  return;
-                }
-
-                final config = RadarConfig(
-                  id: const Uuid().v4(),
-                  name: name,
-                  keyword: keyword,
-                  selectedOrgIds: selectedOrgIds,
-                  startDate: _startDate,
-                  endDate: _endDate,
-                  createdAt: DateTime.now(),
+            const SizedBox(height: 16),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '选择时间范围:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _showDatePicker(isStart: true),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '开始时间',
+                            style: TextStyle(color: textSecondary),
+                          ),
+                          Text(
+                            '${_startDate.year}-${_startDate.month.toString().padLeft(2, '0')}-${_startDate.day.toString().padLeft(2, '0')}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _showDatePicker(isStart: false),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '结束时间',
+                            style: TextStyle(color: textSecondary),
+                          ),
+                          Text(
+                            '${_endDate.year}-${_endDate.month.toString().padLeft(2, '0')}-${_endDate.day.toString().padLeft(2, '0')}',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '选择组织:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: organizations.entries.map((entry) {
+                return FilterChip(
+                  label: Text(entry.value.name),
+                  selected: _selectedOrgs[entry.key] ?? false,
+                  onSelected: (selected) {
+                    setState(() {
+                      _selectedOrgs[entry.key] = selected;
+                    });
+                  },
                 );
-
-                await RadarStorage.saveRadarConfig(config);
-                await _loadRadarConfigs();
-
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('雷达保存成功')),
-                );
-              },
-              child: const Text('保存'),
+              }).toList(),
             ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '自动搜索',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Switch(
+                  value: _isAutoSearch,
+                  onChanged: (value) {
+                    setState(() {
+                      _isAutoSearch = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+            if (_isAutoSearch)
+              Column(
+                children: [
+                  const SizedBox(height: 8),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '自动搜索时间:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: _autoSearchHour,
+                          items: List.generate(24, (index) => index).map((hour) {
+                            return DropdownMenuItem(
+                              value: hour,
+                              child: Text('${hour.toString().padLeft(2, '0')} 时'),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _autoSearchHour = value ?? 9;
+                            });
+                          },
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: _autoSearchMinute,
+                          items: [0, 15, 30, 45].map((minute) {
+                            return DropdownMenuItem(
+                              value: minute,
+                              child: Text('${minute.toString().padLeft(2, '0')} 分'),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _autoSearchMinute = value ?? 0;
+                            });
+                          },
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
           ],
-        );
-      },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: _handleSave,
+          child: const Text('创建'),
+        ),
+      ],
     );
   }
 }
@@ -395,7 +939,6 @@ class SearchScreenWithState extends StatefulWidget {
   final DateTime? startDate;
   final DateTime? endDate;
   final Function(DateTime?, DateTime?) onDateChanged;
-  final VoidCallback onSaveRadar;
 
   const SearchScreenWithState({
     super.key,
@@ -404,7 +947,6 @@ class SearchScreenWithState extends StatefulWidget {
     required this.startDate,
     required this.endDate,
     required this.onDateChanged,
-    required this.onSaveRadar,
   });
 
   @override
@@ -510,9 +1052,8 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
   }
 
   Future<void> _launchUrl(String url) async {
-    Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+    if (await canLaunchUrlString(url)) {
+      await launchUrlString(url);
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -708,24 +1249,6 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
                       '搜索',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            width: double.infinity,
-            decoration: cardDecoration,
-            child: ElevatedButton(
-              onPressed: widget.onSaveRadar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: cardBg,
-                foregroundColor: primaryColor,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                elevation: 0,
-              ),
-              child: const Text(
-                '保存为雷达',
-                style: TextStyle(fontSize: 16),
-              ),
             ),
           ),
           const SizedBox(height: 32),

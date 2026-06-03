@@ -23,6 +23,10 @@ class BottomNavigation extends StatelessWidget {
           label: '发现',
         ),
         BottomNavigationBarItem(
+          icon: Icon(Icons.message),
+          label: '消息',
+        ),
+        BottomNavigationBarItem(
           icon: Icon(Icons.person),
           label: '我的',
         ),

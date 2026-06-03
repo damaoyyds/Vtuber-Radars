@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:vtuber_radar_f/screens/search_screen.dart';
+import 'package:vtuber_radar/screens/search_screen.dart';
 
 void main() {
   runApp(const MyApp());

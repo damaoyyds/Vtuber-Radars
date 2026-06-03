@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:vtuber_radar_f/models/organization.dart';
-import 'package:vtuber_radar_f/models/search_result.dart';
+import 'package:vtuber_radar/models/organization.dart';
+import 'package:vtuber_radar/models/search_result.dart';
 
 class SearchApi {
   static Future<SearchResult> fetchSearchResults(

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:vtuber_radar_f/models/organization.dart';
-import 'package:vtuber_radar_f/models/search_result.dart';
-import 'package:vtuber_radar_f/services/search_api.dart';
+import 'package:vtuber_radar/models/organization.dart';
+import 'package:vtuber_radar/models/search_result.dart';
+import 'package:vtuber_radar/services/search_api.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});

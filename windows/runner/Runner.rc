@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "vtuber_radar_f" "\0"
+            VALUE "CompanyName", "Vtuber Radar" "\0"
+            VALUE "FileDescription", "Vtuber Radar" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "vtuber_radar_f" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "vtuber_radar_f.exe" "\0"
-            VALUE "ProductName", "vtuber_radar_f" "\0"
+            VALUE "InternalName", "Vtuber Radar" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Vtuber Radar. All rights reserved." "\0"
+            VALUE "OriginalFilename", "Vtuber Radar.exe" "\0"
+            VALUE "ProductName", "Vtuber Radar" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

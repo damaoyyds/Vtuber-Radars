@@ -7,6 +7,7 @@ class Message {
   final MessageType type;
   final String? text;
   final ClipItem? clipItem;
+  final String? keyword;
 
   Message({
     required this.id,
@@ -15,6 +16,7 @@ class Message {
     required this.type,
     this.text,
     this.clipItem,
+    this.keyword,
   });
 }
 

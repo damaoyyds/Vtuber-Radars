@@ -1,3 +1,5 @@
+import './schedule_time.dart';
+
 class RadarConfig {
   final String id;
   final String name;
@@ -7,8 +9,7 @@ class RadarConfig {
   final DateTime? endDate;
   final DateTime createdAt;
   final bool isAutoSearch;
-  final int autoSearchHour;
-  final int autoSearchMinute;
+  final List<ScheduleTime> scheduleTimes;
   final bool isAutoSearchEnabled;
 
   RadarConfig({
@@ -20,10 +21,9 @@ class RadarConfig {
     this.endDate,
     required this.createdAt,
     this.isAutoSearch = false,
-    this.autoSearchHour = 9,
-    this.autoSearchMinute = 0,
+    List<ScheduleTime>? scheduleTimes,
     this.isAutoSearchEnabled = false,
-  });
+  }) : scheduleTimes = scheduleTimes ?? [ScheduleTime(hour: 9, minute: 0)];
 
   Map<String, dynamic> toJson() {
     return {
@@ -35,13 +35,23 @@ class RadarConfig {
       'endDate': endDate?.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
       'isAutoSearch': isAutoSearch,
-      'autoSearchHour': autoSearchHour,
-      'autoSearchMinute': autoSearchMinute,
+      'scheduleTimes': scheduleTimes.map((time) => time.toJson()).toList(),
       'isAutoSearchEnabled': isAutoSearchEnabled,
     };
   }
 
   factory RadarConfig.fromJson(Map<String, dynamic> json) {
+    List<ScheduleTime> times;
+    if (json.containsKey('scheduleTimes') && json['scheduleTimes'] != null) {
+      times = (json['scheduleTimes'] as List)
+          .map((item) => ScheduleTime.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } else {
+      int hour = json['autoSearchHour'] as int? ?? 9;
+      int minute = json['autoSearchMinute'] as int? ?? 0;
+      times = [ScheduleTime(hour: hour, minute: minute)];
+    }
+
     return RadarConfig(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -51,14 +61,14 @@ class RadarConfig {
       endDate: json['endDate'] != null ? DateTime.parse(json['endDate'] as String) : null,
       createdAt: DateTime.parse(json['createdAt'] as String),
       isAutoSearch: json['isAutoSearch'] as bool? ?? false,
-      autoSearchHour: json['autoSearchHour'] as int? ?? 9,
-      autoSearchMinute: json['autoSearchMinute'] as int? ?? 0,
+      scheduleTimes: times,
       isAutoSearchEnabled: json['isAutoSearchEnabled'] as bool? ?? false,
     );
   }
 
   RadarConfig copyWith({
     bool? isAutoSearchEnabled,
+    List<ScheduleTime>? scheduleTimes,
   }) {
     return RadarConfig(
       id: id,
@@ -69,8 +79,7 @@ class RadarConfig {
       endDate: endDate,
       createdAt: createdAt,
       isAutoSearch: isAutoSearch,
-      autoSearchHour: autoSearchHour,
-      autoSearchMinute: autoSearchMinute,
+      scheduleTimes: scheduleTimes ?? this.scheduleTimes,
       isAutoSearchEnabled: isAutoSearchEnabled ?? this.isAutoSearchEnabled,
     );
   }

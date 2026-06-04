@@ -6,11 +6,13 @@ import './components/bottom_navigation.dart';
 import './components/add_radar_card.dart';
 import './components/radar_card.dart';
 import './models/radar_config.dart';
+import './models/schedule_time.dart';
 import './models/organization.dart';
 import './models/search_result.dart';
 import './models/message.dart';
 import './services/search_api.dart';
 import './services/radar_storage.dart';
+import './services/data_store_service.dart';
 import './screens/chat_detail_page.dart';
 
 void main() {
@@ -75,27 +77,35 @@ class _MainScreenState extends State<MainScreen> {
 
     for (var radar in _radarConfigs) {
       if (radar.isAutoSearch && radar.isAutoSearchEnabled) {
-        // 计算今天的预定搜索时间
-        final todayScheduledTime = DateTime(
-          now.year,
-          now.month,
-          now.day,
-          radar.autoSearchHour,
-          radar.autoSearchMinute,
-        );
+        // 检查每个预定时间点
+        for (var scheduleTime in radar.scheduleTimes) {
+          // 计算今天的预定搜索时间
+          final todayScheduledTime = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            scheduleTime.hour,
+            scheduleTime.minute,
+          );
 
-        // 检查是否已经执行过今天的自动搜索
-        final alreadyRanToday = lastDate.year == now.year &&
-            lastDate.month == now.month &&
-            lastDate.day == now.day;
+          // 检查是否已经执行过今天这个时间点的自动搜索
+          final alreadyRanToday = lastDate.year == now.year &&
+              lastDate.month == now.month &&
+              lastDate.day == now.day;
 
-        // 如果当前时间已过设定时间，且今天还未执行，则执行搜索
-        if (!alreadyRanToday && now.isAfter(todayScheduledTime)) {
-          // 执行搜索
-          _searchWithRadar(radar);
+          // 检查当前时间是否已过设定时间，且今天还未执行过，且距离上次执行已经超过1小时（避免重复执行）
+          bool shouldRun = !alreadyRanToday && 
+              now.isAfter(todayScheduledTime) &&
+              now.difference(todayScheduledTime).inMinutes >= 1;
 
-          // 更新最后执行时间
-          await RadarStorage.setLastAutoSearchTime(now);
+          if (shouldRun) {
+            // 执行搜索
+            _searchWithRadar(radar);
+
+            // 更新最后执行时间
+            await RadarStorage.setLastAutoSearchTime(now);
+            break;
+          }
         }
       }
     }
@@ -462,23 +472,39 @@ class _MainScreenState extends State<MainScreen> {
         endDate: endDateStr,
       );
 
+      List<ClipItem> newItems = await DataStoreService.findNewItems(radar.id, result.items);
+
+      await DataStoreService.addItemsToStore(radar.id, newItems);
+
       setState(() {
         _messages.removeWhere((m) => m.radarName == radar.name && m.type == MessageType.searching);
-        _messages.insert(0, Message(
-          id: const Uuid().v4(),
-          radarName: radar.name,
-          timestamp: DateTime.now(),
-          type: MessageType.searchComplete,
-          text: '搜索完成，找到 ${result.items.length} 条结果',
-        ));
-        for (var item in result.items) {
+        
+        if (newItems.isEmpty) {
           _messages.insert(0, Message(
             id: const Uuid().v4(),
             radarName: radar.name,
             timestamp: DateTime.now(),
             type: MessageType.searchComplete,
-            clipItem: item,
+            text: '搜索完成，没有新数据',
           ));
+        } else {
+          _messages.insert(0, Message(
+            id: const Uuid().v4(),
+            radarName: radar.name,
+            timestamp: DateTime.now(),
+            type: MessageType.searchComplete,
+            text: '搜索完成，找到 ${newItems.length} 条新数据',
+          ));
+          for (var item in newItems) {
+            _messages.insert(0, Message(
+              id: const Uuid().v4(),
+              radarName: radar.name,
+              timestamp: DateTime.now(),
+              type: MessageType.searchComplete,
+              clipItem: item,
+              keyword: radar.keyword,
+            ));
+          }
         }
       });
 
@@ -493,6 +519,7 @@ class _MainScreenState extends State<MainScreen> {
       );
     } catch (e) {
       setState(() {
+        _messages.removeWhere((m) => m.radarName == radar.name && m.type == MessageType.searching);
         _messages.insert(0, Message(
           id: const Uuid().v4(),
           radarName: radar.name,
@@ -593,7 +620,7 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (context) {
         return _CreateRadarDialog(
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, autoHour, autoMinute) async {
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes) async {
             final config = RadarConfig(
               id: const Uuid().v4(),
               name: name,
@@ -603,8 +630,7 @@ class _MainScreenState extends State<MainScreen> {
               endDate: endDate,
               createdAt: DateTime.now(),
               isAutoSearch: isAutoSearch,
-              autoSearchHour: autoHour,
-              autoSearchMinute: autoMinute,
+              scheduleTimes: scheduleTimes,
             );
             await RadarStorage.saveRadarConfig(config);
             await _loadRadarConfigs();
@@ -620,7 +646,7 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context) {
         return _CreateRadarDialog(
           radar: radar,
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, autoHour, autoMinute) async {
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes) async {
             final updatedConfig = RadarConfig(
               id: radar.id,
               name: name,
@@ -630,8 +656,7 @@ class _MainScreenState extends State<MainScreen> {
               endDate: endDate,
               createdAt: radar.createdAt,
               isAutoSearch: isAutoSearch,
-              autoSearchHour: autoHour,
-              autoSearchMinute: autoMinute,
+              scheduleTimes: scheduleTimes,
               isAutoSearchEnabled: radar.isAutoSearchEnabled,
             );
             await RadarStorage.saveRadarConfig(updatedConfig);
@@ -652,7 +677,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class _CreateRadarDialog extends StatefulWidget {
-  final Function(String, String, List<String>, DateTime, DateTime, bool, int, int) onSave;
+  final Function(String, String, List<String>, DateTime, DateTime, bool, List<ScheduleTime>) onSave;
   final RadarConfig? radar;
 
   const _CreateRadarDialog({
@@ -665,6 +690,17 @@ class _CreateRadarDialog extends StatefulWidget {
   State<_CreateRadarDialog> createState() => _CreateRadarDialogState();
 }
 
+// 辅助类，用于跟踪每个时间点的状态
+class _TimePointState {
+  int hour;
+  int minute;
+
+  _TimePointState({
+    required this.hour,
+    required this.minute,
+  });
+}
+
 class _CreateRadarDialogState extends State<_CreateRadarDialog> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _keywordController = TextEditingController();
@@ -672,8 +708,8 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
   late DateTime _startDate;
   late DateTime _endDate;
   late bool _isAutoSearch;
-  late int _autoSearchHour;
-  late int _autoSearchMinute;
+  // 使用一个对象来跟踪每个时间点的状态，用 GlobalKey 来重建
+  List<_TimePointState> _timePoints = [];
 
   @override
   void initState() {
@@ -688,8 +724,11 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       _startDate = widget.radar!.startDate ?? DateTime.now().subtract(const Duration(days: 30));
       _endDate = widget.radar!.endDate ?? DateTime.now();
       _isAutoSearch = widget.radar!.isAutoSearch;
-      _autoSearchHour = widget.radar!.autoSearchHour;
-      _autoSearchMinute = widget.radar!.autoSearchMinute;
+      // 初始化时间点列表
+      _timePoints = widget.radar!.scheduleTimes.map((time) => _TimePointState(
+        hour: time.hour,
+        minute: time.minute,
+      )).toList();
       for (var orgId in widget.radar!.selectedOrgIds) {
         _selectedOrgs[orgId] = true;
       }
@@ -697,9 +736,30 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       _startDate = DateTime.now().subtract(const Duration(days: 30));
       _endDate = DateTime.now();
       _isAutoSearch = false;
-      _autoSearchHour = 9;
-      _autoSearchMinute = 0;
+      _timePoints = [_TimePointState(
+        hour: 9,
+        minute: 0,
+      )];
     }
+  }
+
+  void _addScheduleTime() {
+    setState(() {
+      if (_timePoints.length < 10) {
+        _timePoints.add(_TimePointState(
+          hour: 9,
+          minute: 0,
+        ));
+      }
+    });
+  }
+
+  void _removeScheduleTime(int index) {
+    setState(() {
+      if (_timePoints.length > 1) {
+        _timePoints.removeAt(index);
+      }
+    });
   }
 
   Future<void> _showDatePicker({required bool isStart}) async {
@@ -750,7 +810,13 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       return;
     }
 
-    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, _autoSearchHour, _autoSearchMinute);
+    // 将 _timePoints 转换为 ScheduleTime 列表
+    List<ScheduleTime> scheduleTimes = _timePoints.map((tp) => ScheduleTime(
+      hour: tp.hour,
+      minute: tp.minute,
+    )).toList();
+
+    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(widget.radar != null ? '雷达修改成功' : '雷达创建成功')),
@@ -898,46 +964,89 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          value: _autoSearchHour,
-                          items: List.generate(24, (index) => index).map((hour) {
-                            return DropdownMenuItem(
-                              value: hour,
-                              child: Text('${hour.toString().padLeft(2, '0')} 时'),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _autoSearchHour = value ?? 9;
-                            });
-                          },
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
+                  ..._timePoints.asMap().entries.map((entry) {
+                    int index = entry.key;
+                    _TimePointState timePoint = entry.value;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              initialValue: timePoint.hour.toString().padLeft(2, '0'),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                hintText: '时',
+                              ),
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              onChanged: (value) {
+                                int? hour = int.tryParse(value);
+                                if (hour != null && hour >= 0 && hour <= 23) {
+                                  setState(() {
+                                    timePoint.hour = hour;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const Text(':', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey)),
+                          Expanded(
+                            child: TextFormField(
+                              initialValue: timePoint.minute.toString().padLeft(2, '0'),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                hintText: '分',
+                              ),
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              onChanged: (value) {
+                                int? minute = int.tryParse(value);
+                                if (minute != null && minute >= 0 && minute <= 59) {
+                                  setState(() {
+                                    timePoint.minute = minute;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          if (_timePoints.length > 1)
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, color: Colors.grey),
+                              onPressed: () => _removeScheduleTime(index),
+                              iconSize: 20,
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  const SizedBox(height: 8),
+                  if (_timePoints.length < 10)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _addScheduleTime,
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        label: const Text('添加时间点'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.purple,
+                          side: const BorderSide(color: Colors.purple),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          initialValue: _autoSearchMinute.toString().padLeft(2, '0'),
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                            hintText: '分 (0-59)',
-                          ),
-                          onChanged: (value) {
-                            int? minute = int.tryParse(value);
-                            if (minute != null && minute >= 0 && minute <= 59) {
-                              _autoSearchMinute = minute;
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
                 ],
               ),
           ],

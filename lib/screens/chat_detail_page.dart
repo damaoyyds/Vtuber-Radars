@@ -14,6 +14,54 @@ class ChatDetailPage extends StatelessWidget {
     required this.messages,
   });
 
+  String? get _keyword {
+    for (var msg in messages) {
+      if (msg.keyword != null && msg.keyword!.isNotEmpty) {
+        return msg.keyword;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildHighlightedText(String text, String pinyin, String? keyword) {
+    List<TextSpan> spans = [];
+    String remaining = text;
+
+    if (pinyin.isNotEmpty) {
+      int index = remaining.indexOf(pinyin);
+      if (index != -1) {
+        if (index > 0) {
+          spans.add(TextSpan(text: remaining.substring(0, index)));
+        }
+        spans.add(TextSpan(
+          text: pinyin,
+          style: const TextStyle(color: Colors.red),
+        ));
+        remaining = remaining.substring(index + pinyin.length);
+      }
+    }
+
+    if (keyword != null && keyword.isNotEmpty && remaining.contains(keyword)) {
+      int index = remaining.indexOf(keyword);
+      if (index != -1) {
+        if (index > 0) {
+          spans.add(TextSpan(text: remaining.substring(0, index)));
+        }
+        spans.add(TextSpan(
+          text: keyword,
+          style: const TextStyle(color: Colors.blue),
+        ));
+        remaining = remaining.substring(index + keyword.length);
+      }
+    }
+
+    if (remaining.isNotEmpty) {
+      spans.add(TextSpan(text: remaining));
+    }
+
+    return Text.rich(TextSpan(children: spans));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -173,9 +221,7 @@ class ChatDetailPage extends StatelessWidget {
                           '[${subtitle.formatTime(subtitle.start)} ~ ${subtitle.formatTime(subtitle.end)}]',
                           style: const TextStyle(color: Colors.grey),
                         ),
-                        Text(
-                          subtitle.cleanContent,
-                        ),
+                        _buildHighlightedText(subtitle.cleanContent, subtitle.pinyin, _keyword),
                       ],
                     ),
                   );

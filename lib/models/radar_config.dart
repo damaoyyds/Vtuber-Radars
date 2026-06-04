@@ -11,6 +11,7 @@ class RadarConfig {
   final bool isAutoSearch;
   final List<ScheduleTime> scheduleTimes;
   final bool isAutoSearchEnabled;
+  final String? avatarPath;
 
   RadarConfig({
     required this.id,
@@ -23,6 +24,7 @@ class RadarConfig {
     this.isAutoSearch = false,
     List<ScheduleTime>? scheduleTimes,
     this.isAutoSearchEnabled = false,
+    this.avatarPath,
   }) : scheduleTimes = scheduleTimes ?? [ScheduleTime(hour: 9, minute: 0)];
 
   Map<String, dynamic> toJson() {
@@ -37,6 +39,7 @@ class RadarConfig {
       'isAutoSearch': isAutoSearch,
       'scheduleTimes': scheduleTimes.map((time) => time.toJson()).toList(),
       'isAutoSearchEnabled': isAutoSearchEnabled,
+      'avatarPath': avatarPath,
     };
   }
 
@@ -63,12 +66,14 @@ class RadarConfig {
       isAutoSearch: json['isAutoSearch'] as bool? ?? false,
       scheduleTimes: times,
       isAutoSearchEnabled: json['isAutoSearchEnabled'] as bool? ?? false,
+      avatarPath: json['avatarPath'] as String?,
     );
   }
 
   RadarConfig copyWith({
     bool? isAutoSearchEnabled,
     List<ScheduleTime>? scheduleTimes,
+    String? avatarPath,
   }) {
     return RadarConfig(
       id: id,
@@ -81,6 +86,7 @@ class RadarConfig {
       isAutoSearch: isAutoSearch,
       scheduleTimes: scheduleTimes ?? this.scheduleTimes,
       isAutoSearchEnabled: isAutoSearchEnabled ?? this.isAutoSearchEnabled,
+      avatarPath: avatarPath ?? this.avatarPath,
     );
   }
 }

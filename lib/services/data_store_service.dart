@@ -56,4 +56,25 @@ class DataStoreService {
     final store = DataStore(radarId: radarId, items: []);
     await saveDataStore(store);
   }
+
+  static Future<void> clearAllDataStores() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
+  }
+
+  static Future<String> getCacheSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = prefs.getString(_key);
+    if (data == null || data.isEmpty) {
+      return '0 KB';
+    }
+    final bytes = data.length * 2;
+    if (bytes < 1024) {
+      return '${bytes} B';
+    } else if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    } else {
+      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+    }
+  }
 }

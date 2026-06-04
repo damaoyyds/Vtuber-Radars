@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:uuid/uuid.dart';
@@ -54,6 +57,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _isSelectMode = false;
   Set<String> _selectedRadarIds = {};
   List<Message> _messages = [];
+  String _cacheSize = '0 KB';
 
   @override
   void initState() {
@@ -69,6 +73,14 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _initApp() async {
     await _loadMessages();
     await _loadRadarConfigs();
+    await _loadCacheSize();
+  }
+
+  Future<void> _loadCacheSize() async {
+    final size = await DataStoreService.getCacheSize();
+    setState(() {
+      _cacheSize = size;
+    });
   }
 
   Future<void> _loadMessages() async {
@@ -206,24 +218,89 @@ class _MainScreenState extends State<MainScreen> {
         children: [
           const SizedBox(height: 60),
           if (groupedMessages.isEmpty)
-            Container(
-              decoration: cardDecoration,
-              padding: const EdgeInsets.all(20),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: const Column(
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.inbox,
-                    size: 64,
-                    color: textTertiary,
+                  Container(
+                    width: 180,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [primaryColor, secondaryColor],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(40),
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryColor.withOpacity(0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.message,
+                      size: 80,
+                      color: Colors.white,
+                    ),
                   ),
-                  SizedBox(height: 16),
-                  Text(
+                  const SizedBox(height: 32),
+                  const Text(
                     '暂无消息',
                     style: TextStyle(
-                      fontSize: 18,
-                      color: textTertiary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: textPrimary,
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '快去创建雷达或进行搜索吧',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedIndex = 0;
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text('创建雷达'),
+                      ),
+                      const SizedBox(width: 16),
+                      OutlinedButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedIndex = 1;
+                          });
+                        },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          side: const BorderSide(color: primaryColor),
+                        ),
+                        child: const Text('立即搜索'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -244,6 +321,17 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildConversationItem(String radarName, List<Message> messages, Message latestMsg) {
     int unreadCount = messages.where((m) => m.type != MessageType.searching).length;
+    
+    RadarConfig? radar = _radarConfigs.firstWhere(
+      (r) => r.name == radarName,
+      orElse: () => RadarConfig(
+        id: '',
+        name: radarName,
+        keyword: '',
+        selectedOrgIds: [],
+        createdAt: DateTime.now(),
+      ),
+    );
     
     return InkWell(
       onTap: () {
@@ -268,8 +356,13 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             CircleAvatar(
               radius: 28,
+              backgroundImage: radar.avatarPath != null && radar.id.isNotEmpty
+                  ? FileImage(File(radar.avatarPath!))
+                  : null,
               backgroundColor: primaryColor.withOpacity(0.1),
-              child: const Icon(Icons.radar, color: primaryColor, size: 24),
+              child: radar.avatarPath == null || radar.id.isEmpty
+                  ? const Icon(Icons.radar, color: primaryColor, size: 24)
+                  : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -288,9 +381,10 @@ class _MainScreenState extends State<MainScreen> {
                   Text(
                     latestMsg.text ?? (latestMsg.clipItem != null ? '搜索到新结果' : ''),
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       color: textSecondary,
                     ),
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -556,12 +650,15 @@ class _MainScreenState extends State<MainScreen> {
           text: '搜索完成，没有新数据',
         ));
       } else {
+        Set<String> authorNames = newItems.map((item) => item.author.name).toSet();
+        String authorsText = authorNames.join('、');
+        
         newMessages.add(Message(
           id: const Uuid().v4(),
           radarName: radar.name,
           timestamp: DateTime.now(),
           type: MessageType.searchComplete,
-          text: '搜索完成，找到 ${newItems.length} 条新数据',
+          text: '$authorsText 提到了 ${radar.keyword}',
         ));
         for (var item in newItems) {
           newMessages.add(Message(
@@ -683,10 +780,10 @@ class _MainScreenState extends State<MainScreen> {
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: const [
-                    StatItem(value: '12', label: '雷达数量'),
-                    StatItem(value: '58', label: '已追踪'),
-                    StatItem(value: '3', label: '正在直播'),
+                  children: [
+                    StatItem(value: _radarConfigs.length.toString(), label: '雷达数量'),
+                    StatItem(value: organizations.length.toString(), label: '已追踪'),
+                    StatItem(value: '0', label: '正在直播'),
                   ],
                 ),
               ],
@@ -699,8 +796,8 @@ class _MainScreenState extends State<MainScreen> {
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
+              children: [
+                const Text(
                   '设置',
                   style: TextStyle(
                     fontSize: 18,
@@ -708,9 +805,15 @@ class _MainScreenState extends State<MainScreen> {
                     color: textPrimary,
                   ),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 SettingItem(icon: Icons.notifications, label: '通知设置'),
                 SettingItem(icon: Icons.privacy_tip, label: '隐私设置'),
+                SettingItem(
+                  icon: Icons.delete_sweep,
+                  label: '清空缓存',
+                  trailing: _cacheSize,
+                  onTap: _showClearCacheDialog,
+                ),
                 SettingItem(icon: Icons.help, label: '帮助与反馈'),
                 SettingItem(icon: Icons.info, label: '关于我们'),
               ],
@@ -722,12 +825,42 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _showClearCacheDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('确认清空缓存'),
+          content: const Text('清空缓存后，所有已存储的视频数据将被删除，下次搜索时会重新获取数据。确定要继续吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await DataStoreService.clearAllDataStores();
+                Navigator.pop(context);
+                await _loadCacheSize();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('缓存已清空')),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('清空'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showCreateRadarDialog() {
     showDialog(
       context: context,
       builder: (context) {
         return _CreateRadarDialog(
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes) async {
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath) async {
             final config = RadarConfig(
               id: const Uuid().v4(),
               name: name,
@@ -738,6 +871,7 @@ class _MainScreenState extends State<MainScreen> {
               createdAt: DateTime.now(),
               isAutoSearch: isAutoSearch,
               scheduleTimes: scheduleTimes,
+              avatarPath: avatarPath,
             );
             await RadarStorage.saveRadarConfig(config);
             await _loadRadarConfigs();
@@ -753,7 +887,7 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context) {
         return _CreateRadarDialog(
           radar: radar,
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes) async {
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath) async {
             final updatedConfig = RadarConfig(
               id: radar.id,
               name: name,
@@ -765,6 +899,7 @@ class _MainScreenState extends State<MainScreen> {
               isAutoSearch: isAutoSearch,
               scheduleTimes: scheduleTimes,
               isAutoSearchEnabled: radar.isAutoSearchEnabled,
+              avatarPath: avatarPath,
             );
             await RadarStorage.saveRadarConfig(updatedConfig);
             await _loadRadarConfigs();
@@ -784,7 +919,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class _CreateRadarDialog extends StatefulWidget {
-  final Function(String, String, List<String>, DateTime, DateTime, bool, List<ScheduleTime>) onSave;
+  final Function(String, String, List<String>, DateTime, DateTime, bool, List<ScheduleTime>, String?) onSave;
   final RadarConfig? radar;
 
   const _CreateRadarDialog({
@@ -815,8 +950,8 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
   late DateTime _startDate;
   late DateTime _endDate;
   late bool _isAutoSearch;
-  // 使用一个对象来跟踪每个时间点的状态，用 GlobalKey 来重建
   List<_TimePointState> _timePoints = [];
+  String? _avatarPath;
 
   @override
   void initState() {
@@ -831,7 +966,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       _startDate = widget.radar!.startDate ?? DateTime.now().subtract(const Duration(days: 30));
       _endDate = widget.radar!.endDate ?? DateTime.now();
       _isAutoSearch = widget.radar!.isAutoSearch;
-      // 初始化时间点列表
+      _avatarPath = widget.radar!.avatarPath;
       _timePoints = widget.radar!.scheduleTimes.map((time) => _TimePointState(
         hour: time.hour,
         minute: time.minute,
@@ -848,6 +983,83 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
         minute: 0,
       )];
     }
+  }
+
+  Future<void> _pickAvatar(ImageSource source) async {
+    final picker = ImagePicker();
+    try {
+      final XFile? pickedFile = await picker.pickImage(
+        source: source,
+        imageQuality: 80,
+      );
+      
+      if (pickedFile != null) {
+        final Directory appDir = await getApplicationDocumentsDirectory();
+        final String fileName = '${widget.radar?.id ?? const Uuid().v4()}_avatar.jpg';
+        final String targetPath = '${appDir.path}/$fileName';
+        
+        final File newFile = await File(pickedFile.path).copy(targetPath);
+        
+        setState(() {
+          _avatarPath = newFile.path;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('选择图片失败: $e')),
+      );
+    }
+  }
+
+  void _removeAvatar() {
+    if (_avatarPath != null) {
+      File(_avatarPath!).delete();
+    }
+    setState(() {
+      _avatarPath = null;
+    });
+  }
+
+  void _showAvatarPicker() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('选择头像'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('拍照'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickAvatar(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('从相册选择'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickAvatar(ImageSource.gallery);
+                },
+              ),
+              if (_avatarPath != null)
+                ListTile(
+                  leading: const Icon(Icons.delete),
+                  title: const Text('删除头像'),
+                  textColor: Colors.red,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _removeAvatar();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _addScheduleTime() {
@@ -923,7 +1135,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       minute: tp.minute,
     )).toList();
 
-    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes);
+    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes, _avatarPath);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(widget.radar != null ? '雷达修改成功' : '雷达创建成功')),
@@ -940,6 +1152,45 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Center(
+              child: GestureDetector(
+                onTap: _showAvatarPicker,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundImage: _avatarPath != null
+                          ? FileImage(File(_avatarPath!))
+                          : const NetworkImage(
+                              'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=anime%20girl%20avatar%20cute%20blue%20hair&image_size=square',
+                            ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '点击头像上传或修改',
+              style: TextStyle(color: textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -1207,27 +1458,53 @@ class StatItem extends StatelessWidget {
 class SettingItem extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String? trailing;
+  final VoidCallback? onTap;
+  final bool showArrow;
 
-  const SettingItem({super.key, required this.icon, required this.label});
+  const SettingItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.trailing,
+    this.onTap,
+    this.showArrow = true,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: textTertiary),
-          const SizedBox(width: 16),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 16,
-              color: textPrimary,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: textTertiary),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: textPrimary,
+                ),
+              ),
             ),
-          ),
-          const Spacer(),
-          const Icon(Icons.arrow_forward_ios, color: textTertiary),
-        ],
+            if (trailing != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Text(
+                  trailing!,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: textSecondary,
+                  ),
+                ),
+              ),
+            if (showArrow)
+              const Icon(Icons.arrow_forward_ios, color: textTertiary),
+          ],
+        ),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/radar_config.dart';
 import '../theme/app_theme.dart';
@@ -47,11 +48,13 @@ class RadarCard extends StatelessWidget {
                   activeColor: primaryColor,
                 ),
               ),
-            const CircleAvatar(
+            CircleAvatar(
               radius: 32,
-              backgroundImage: NetworkImage(
-                'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=anime%20girl%20avatar%20cute%20blue%20hair&image_size=square',
-              ),
+              backgroundImage: radar.avatarPath != null
+                  ? FileImage(File(radar.avatarPath!))
+                  : const NetworkImage(
+                      'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=anime%20girl%20avatar%20cute%20blue%20hair&image_size=square',
+                    ),
             ),
             const SizedBox(width: 16),
             Expanded(

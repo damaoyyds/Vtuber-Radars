@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:uuid/uuid.dart';
 import './theme/app_theme.dart';
@@ -13,9 +14,12 @@ import './models/message.dart';
 import './services/search_api.dart';
 import './services/radar_storage.dart';
 import './services/data_store_service.dart';
+import './services/message_storage.dart';
 import './screens/chat_detail_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SharedPreferences.getInstance();
   runApp(const MyApp());
 }
 
@@ -59,7 +63,19 @@ class _MainScreenState extends State<MainScreen> {
     });
     _endDate = DateTime.now();
     _startDate = DateTime.now().subtract(const Duration(days: 30));
-    _loadRadarConfigs();
+    _initApp();
+  }
+
+  Future<void> _initApp() async {
+    await _loadMessages();
+    await _loadRadarConfigs();
+  }
+
+  Future<void> _loadMessages() async {
+    final messages = await MessageStorage.loadMessages();
+    setState(() {
+      _messages = messages;
+    });
   }
 
   Future<void> _loadRadarConfigs() async {
@@ -237,10 +253,13 @@ class _MainScreenState extends State<MainScreen> {
               builder: (context) => ChatDetailPage(
                 radarName: radarName,
                 messages: List.from(messages),
+                onDeleteMessage: (messageId) => _deleteMessage(messageId),
+                onClearAll: () => _deleteMessagesByRadarName(radarName),
               ),
             ),
           );
       },
+      onLongPress: () => _showDeleteConversationDialog(radarName),
       child: Container(
         decoration: cardDecoration,
         padding: const EdgeInsets.all(16),
@@ -310,6 +329,49 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
     );
+  }
+
+  void _showDeleteConversationDialog(String radarName) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('删除会话'),
+          content: Text('确定要删除 \"$radarName\" 的所有消息吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await _deleteMessagesByRadarName(radarName);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('消息删除成功')),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteMessage(String messageId) async {
+    setState(() {
+      _messages.removeWhere((msg) => msg.id == messageId);
+    });
+    await MessageStorage.removeMessage(messageId);
+  }
+
+  Future<void> _deleteMessagesByRadarName(String radarName) async {
+    setState(() {
+      _messages.removeWhere((msg) => msg.radarName == radarName);
+    });
+    await MessageStorage.removeMessagesByRadarName(radarName);
   }
 
   Widget _buildRadarPage() {
@@ -451,15 +513,22 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _searchWithRadar(RadarConfig radar) async {
-    setState(() {
-      _messages.insert(0, Message(
-        id: const Uuid().v4(),
-        radarName: radar.name,
-        timestamp: DateTime.now(),
-        type: MessageType.searching,
-        text: '搜索中...',
-      ));
-    });
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const AlertDialog(
+          title: Text('搜索中'),
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('正在搜索，请稍候...'),
+            ],
+          ),
+        );
+      },
+    );
 
     try {
       String? startDateStr = radar.startDate?.toIso8601String().split('T')[0];
@@ -473,61 +542,99 @@ class _MainScreenState extends State<MainScreen> {
       );
 
       List<ClipItem> newItems = await DataStoreService.findNewItems(radar.id, result.items);
-
       await DataStoreService.addItemsToStore(radar.id, newItems);
 
-      setState(() {
-        _messages.removeWhere((m) => m.radarName == radar.name && m.type == MessageType.searching);
-        
-        if (newItems.isEmpty) {
-          _messages.insert(0, Message(
-            id: const Uuid().v4(),
-            radarName: radar.name,
-            timestamp: DateTime.now(),
-            type: MessageType.searchComplete,
-            text: '搜索完成，没有新数据',
-          ));
-        } else {
-          _messages.insert(0, Message(
-            id: const Uuid().v4(),
-            radarName: radar.name,
-            timestamp: DateTime.now(),
-            type: MessageType.searchComplete,
-            text: '搜索完成，找到 ${newItems.length} 条新数据',
-          ));
-          for (var item in newItems) {
-            _messages.insert(0, Message(
-              id: const Uuid().v4(),
-              radarName: radar.name,
-              timestamp: DateTime.now(),
-              type: MessageType.searchComplete,
-              clipItem: item,
-              keyword: radar.keyword,
-            ));
-          }
-        }
-      });
+      Navigator.pop(context);
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatDetailPage(
-            radarName: radar.name,
-            messages: _messages.where((m) => m.radarName == radar.name).toList(),
-          ),
-        ),
-      );
-    } catch (e) {
-      setState(() {
-        _messages.removeWhere((m) => m.radarName == radar.name && m.type == MessageType.searching);
-        _messages.insert(0, Message(
+      List<Message> newMessages = [];
+      if (newItems.isEmpty) {
+        newMessages.add(Message(
           id: const Uuid().v4(),
           radarName: radar.name,
           timestamp: DateTime.now(),
-          type: MessageType.searchError,
-          text: '搜索失败: $e',
+          type: MessageType.searchComplete,
+          text: '搜索完成，没有新数据',
         ));
+      } else {
+        newMessages.add(Message(
+          id: const Uuid().v4(),
+          radarName: radar.name,
+          timestamp: DateTime.now(),
+          type: MessageType.searchComplete,
+          text: '搜索完成，找到 ${newItems.length} 条新数据',
+        ));
+        for (var item in newItems) {
+          newMessages.add(Message(
+            id: const Uuid().v4(),
+            radarName: radar.name,
+            timestamp: DateTime.now(),
+            type: MessageType.searchComplete,
+            clipItem: item,
+            keyword: radar.keyword,
+          ));
+        }
+      }
+
+      setState(() {
+        _messages.insertAll(0, newMessages);
       });
+      await MessageStorage.saveMessages(_messages);
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('搜索完成'),
+            content: Text('搜索完成，搜索到 ${newItems.length} 条数据，请前往消息页面查看'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('关闭'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _selectedIndex = 2;
+                  });
+                },
+                child: const Text('前往消息页面'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      Navigator.pop(context);
+
+      final errorMsg = Message(
+        id: const Uuid().v4(),
+        radarName: radar.name,
+        timestamp: DateTime.now(),
+        type: MessageType.searchError,
+        text: '搜索失败: $e',
+      );
+
+      setState(() {
+        _messages.insert(0, errorMsg);
+      });
+      await MessageStorage.saveMessages(_messages);
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('搜索失败'),
+            content: Text('搜索失败: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('确定'),
+              ),
+            ],
+          );
+        },
+      );
     }
   }
 
@@ -1320,18 +1427,24 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
             ),
           ),
           const SizedBox(height: 32),
-          Container(
-            decoration: cardDecoration,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: TextField(
-              controller: _localKeywordController,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: '输入关键词搜索',
-                suffixIcon: Icon(Icons.search, color: textTertiary),
+          TextField(
+            controller: _localKeywordController,
+            decoration: InputDecoration(
+              hintText: '输入关键词搜索',
+              suffixIcon: const Icon(Icons.search, color: textTertiary),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(borderRadius),
+                borderSide: BorderSide(color: cardBorder),
               ),
-              onSubmitted: (_) => _onSearch(),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(borderRadius),
+                borderSide: BorderSide(color: primaryColor, width: 2),
+              ),
+              filled: true,
+              fillColor: cardBg,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
             ),
+            onSubmitted: (_) => _onSearch(),
           ),
           const SizedBox(height: 24),
           const Text(

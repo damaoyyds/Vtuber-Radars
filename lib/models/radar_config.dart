@@ -1,5 +1,13 @@
 import './schedule_time.dart';
 
+enum TimeRangeType {
+  custom,
+  lastDay,
+  lastThreeDays,
+  lastSevenDays,
+  lastMonth,
+}
+
 class RadarConfig {
   final String id;
   final String name;
@@ -12,6 +20,7 @@ class RadarConfig {
   final List<ScheduleTime> scheduleTimes;
   final bool isAutoSearchEnabled;
   final String? avatarPath;
+  final TimeRangeType timeRangeType;
 
   RadarConfig({
     required this.id,
@@ -25,6 +34,7 @@ class RadarConfig {
     List<ScheduleTime>? scheduleTimes,
     this.isAutoSearchEnabled = false,
     this.avatarPath,
+    this.timeRangeType = TimeRangeType.custom,
   }) : scheduleTimes = scheduleTimes ?? [ScheduleTime(hour: 9, minute: 0)];
 
   Map<String, dynamic> toJson() {
@@ -40,6 +50,7 @@ class RadarConfig {
       'scheduleTimes': scheduleTimes.map((time) => time.toJson()).toList(),
       'isAutoSearchEnabled': isAutoSearchEnabled,
       'avatarPath': avatarPath,
+      'timeRangeType': timeRangeType.index,
     };
   }
 
@@ -55,6 +66,9 @@ class RadarConfig {
       times = [ScheduleTime(hour: hour, minute: minute)];
     }
 
+    int timeRangeIndex = json['timeRangeType'] as int? ?? 0;
+    TimeRangeType timeRangeType = TimeRangeType.values[timeRangeIndex];
+
     return RadarConfig(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -67,6 +81,7 @@ class RadarConfig {
       scheduleTimes: times,
       isAutoSearchEnabled: json['isAutoSearchEnabled'] as bool? ?? false,
       avatarPath: json['avatarPath'] as String?,
+      timeRangeType: timeRangeType,
     );
   }
 
@@ -74,6 +89,7 @@ class RadarConfig {
     bool? isAutoSearchEnabled,
     List<ScheduleTime>? scheduleTimes,
     String? avatarPath,
+    TimeRangeType? timeRangeType,
   }) {
     return RadarConfig(
       id: id,
@@ -87,6 +103,7 @@ class RadarConfig {
       scheduleTimes: scheduleTimes ?? this.scheduleTimes,
       isAutoSearchEnabled: isAutoSearchEnabled ?? this.isAutoSearchEnabled,
       avatarPath: avatarPath ?? this.avatarPath,
+      timeRangeType: timeRangeType ?? this.timeRangeType,
     );
   }
 }

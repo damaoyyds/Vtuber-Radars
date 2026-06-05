@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import '../models/message.dart';
+import '../models/radar_config.dart';
 import '../models/search_result.dart';
 import '../theme/app_theme.dart';
 
@@ -9,6 +12,7 @@ class ChatDetailPage extends StatelessWidget {
   final List<Message> messages;
   final Function(String)? onDeleteMessage;
   final Function()? onClearAll;
+  final RadarConfig? radarConfig;
 
   const ChatDetailPage({
     super.key,
@@ -16,6 +20,7 @@ class ChatDetailPage extends StatelessWidget {
     required this.messages,
     this.onDeleteMessage,
     this.onClearAll,
+    this.radarConfig,
   });
 
   String? get _keyword {
@@ -147,6 +152,21 @@ class ChatDetailPage extends StatelessWidget {
     );
   }
 
+  Widget _buildAvatar() {
+    if (radarConfig?.avatarPath != null && radarConfig!.avatarPath!.isNotEmpty) {
+      return CircleAvatar(
+        radius: 20,
+        backgroundImage: FileImage(File(radarConfig!.avatarPath!)),
+      );
+    } else {
+      return CircleAvatar(
+        radius: 20,
+        backgroundColor: primaryColor.withOpacity(0.1),
+        child: const Icon(Icons.radar, color: primaryColor, size: 20),
+      );
+    }
+  }
+
   Widget _buildChatMessage(BuildContext context, Message message) {
     return InkWell(
       onLongPress: () => _showDeleteMessageDialog(context, message.id),
@@ -157,11 +177,7 @@ class ChatDetailPage extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: primaryColor.withOpacity(0.1),
-                  child: const Icon(Icons.radar, color: primaryColor, size: 20),
-                ),
+                _buildAvatar(),
                 const SizedBox(width: 8),
                 Text(
                   '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}',
@@ -257,7 +273,7 @@ class ChatDetailPage extends StatelessWidget {
           Row(
             children: [
               Text(
-                '作者: ${item.author.name}',
+                '主播: ${item.author.name}',
                 style: const TextStyle(fontSize: 12, color: textSecondary),
               ),
               const SizedBox(width: 16),
@@ -268,34 +284,7 @@ class ChatDetailPage extends StatelessWidget {
             ],
           ),
           if (item.subtitles.isNotEmpty)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 8),
-                Text(
-                  '匹配的字幕 (${item.subtitles.length}条):',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                ...item.subtitles.map((subtitle) {
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 12, bottom: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '[${subtitle.formatTime(subtitle.start)} ~ ${subtitle.formatTime(subtitle.end)}]',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                        _buildHighlightedText(subtitle.cleanContent, subtitle.pinyin, _keyword),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ),
-          const SizedBox(height: 8),
-          if (item.bilibiliUrl != null)
+            if (item.bilibiliUrl != null)
             InkWell(
               onTap: () => _launchUrl(item.bilibiliUrl),
               child: Text(
@@ -303,6 +292,32 @@ class ChatDetailPage extends StatelessWidget {
                 style: const TextStyle(fontSize: 12, color: primaryColor),
               ),
             ),
+          const SizedBox(height: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '匹配的字幕 (${item.subtitles.length}条):',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              ...item.subtitles.map((subtitle) {
+                return Padding(
+                  padding: const EdgeInsets.only(left: 12, bottom: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '[${subtitle.formatTime(subtitle.start)} ~ ${subtitle.formatTime(subtitle.end)}]',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      _buildHighlightedText(subtitle.cleanContent, subtitle.pinyin, _keyword),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
         ],
       ),
     );

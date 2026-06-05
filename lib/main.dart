@@ -335,7 +335,17 @@ class _MainScreenState extends State<MainScreen> {
     
     return InkWell(
       onTap: () {
-        Navigator.push(
+        RadarConfig? radarConfig = _radarConfigs.firstWhere(
+            (config) => config.name == radarName,
+            orElse: () => RadarConfig(
+              id: '',
+              name: radarName,
+              keyword: '',
+              selectedOrgIds: [],
+              createdAt: DateTime.now(),
+            ),
+          );
+          Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ChatDetailPage(
@@ -343,6 +353,7 @@ class _MainScreenState extends State<MainScreen> {
                 messages: List.from(messages),
                 onDeleteMessage: (messageId) => _deleteMessage(messageId),
                 onClearAll: () => _deleteMessagesByRadarName(radarName),
+                radarConfig: radarConfig.id.isNotEmpty ? radarConfig : null,
               ),
             ),
           );
@@ -625,8 +636,34 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     try {
-      String? startDateStr = radar.startDate?.toIso8601String().split('T')[0];
-      String? endDateStr = radar.endDate?.toIso8601String().split('T')[0];
+      DateTime now = DateTime.now();
+      DateTime effectiveStartDate;
+      DateTime effectiveEndDate;
+
+      switch (radar.timeRangeType) {
+        case TimeRangeType.lastDay:
+          effectiveStartDate = now.subtract(const Duration(days: 1));
+          effectiveEndDate = now;
+          break;
+        case TimeRangeType.lastThreeDays:
+          effectiveStartDate = now.subtract(const Duration(days: 3));
+          effectiveEndDate = now;
+          break;
+        case TimeRangeType.lastSevenDays:
+          effectiveStartDate = now.subtract(const Duration(days: 7));
+          effectiveEndDate = now;
+          break;
+        case TimeRangeType.lastMonth:
+          effectiveStartDate = now.subtract(const Duration(days: 30));
+          effectiveEndDate = now;
+          break;
+        default:
+          effectiveStartDate = radar.startDate ?? now.subtract(const Duration(days: 30));
+          effectiveEndDate = radar.endDate ?? now;
+      }
+
+      String? startDateStr = effectiveStartDate.toIso8601String().split('T')[0];
+      String? endDateStr = effectiveEndDate.toIso8601String().split('T')[0];
 
       SearchResult result = await SearchApi.fetchSearchResults(
         radar.keyword,
@@ -860,7 +897,7 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (context) {
         return _CreateRadarDialog(
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath) async {
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath, timeRangeType) async {
             final config = RadarConfig(
               id: const Uuid().v4(),
               name: name,
@@ -872,6 +909,7 @@ class _MainScreenState extends State<MainScreen> {
               isAutoSearch: isAutoSearch,
               scheduleTimes: scheduleTimes,
               avatarPath: avatarPath,
+              timeRangeType: timeRangeType,
             );
             await RadarStorage.saveRadarConfig(config);
             await _loadRadarConfigs();
@@ -887,7 +925,7 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context) {
         return _CreateRadarDialog(
           radar: radar,
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath) async {
+          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath, timeRangeType) async {
             final updatedConfig = RadarConfig(
               id: radar.id,
               name: name,
@@ -900,6 +938,7 @@ class _MainScreenState extends State<MainScreen> {
               scheduleTimes: scheduleTimes,
               isAutoSearchEnabled: radar.isAutoSearchEnabled,
               avatarPath: avatarPath,
+              timeRangeType: timeRangeType,
             );
             await RadarStorage.saveRadarConfig(updatedConfig);
             await _loadRadarConfigs();
@@ -919,7 +958,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class _CreateRadarDialog extends StatefulWidget {
-  final Function(String, String, List<String>, DateTime, DateTime, bool, List<ScheduleTime>, String?) onSave;
+  final Function(String, String, List<String>, DateTime, DateTime, bool, List<ScheduleTime>, String?, TimeRangeType) onSave;
   final RadarConfig? radar;
 
   const _CreateRadarDialog({
@@ -952,6 +991,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
   late bool _isAutoSearch;
   List<_TimePointState> _timePoints = [];
   String? _avatarPath;
+  late TimeRangeType _timeRangeType;
 
   @override
   void initState() {
@@ -967,6 +1007,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       _endDate = widget.radar!.endDate ?? DateTime.now();
       _isAutoSearch = widget.radar!.isAutoSearch;
       _avatarPath = widget.radar!.avatarPath;
+      _timeRangeType = widget.radar!.timeRangeType;
       _timePoints = widget.radar!.scheduleTimes.map((time) => _TimePointState(
         hour: time.hour,
         minute: time.minute,
@@ -978,6 +1019,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       _startDate = DateTime.now().subtract(const Duration(days: 30));
       _endDate = DateTime.now();
       _isAutoSearch = false;
+      _timeRangeType = TimeRangeType.custom;
       _timePoints = [_TimePointState(
         hour: 9,
         minute: 0,
@@ -1017,6 +1059,33 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
     }
     setState(() {
       _avatarPath = null;
+    });
+  }
+
+  void _selectTimeRange(TimeRangeType type) {
+    setState(() {
+      _timeRangeType = type;
+      final now = DateTime.now();
+      switch (type) {
+        case TimeRangeType.lastDay:
+          _startDate = now.subtract(const Duration(days: 1));
+          _endDate = now;
+          break;
+        case TimeRangeType.lastThreeDays:
+          _startDate = now.subtract(const Duration(days: 3));
+          _endDate = now;
+          break;
+        case TimeRangeType.lastSevenDays:
+          _startDate = now.subtract(const Duration(days: 7));
+          _endDate = now;
+          break;
+        case TimeRangeType.lastMonth:
+          _startDate = now.subtract(const Duration(days: 30));
+          _endDate = now;
+          break;
+        case TimeRangeType.custom:
+          break;
+      }
     });
   }
 
@@ -1100,6 +1169,18 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
     }
   }
 
+  Widget _buildTimeRangeChip(String label, TimeRangeType type) {
+    return FilterChip(
+      label: Text(label),
+      selected: _timeRangeType == type,
+      onSelected: (_) => _selectTimeRange(type),
+      selectedColor: primaryColor,
+      labelStyle: TextStyle(
+        color: _timeRangeType == type ? Colors.white : textPrimary,
+      ),
+    );
+  }
+
   void _handleSave() {
     String name = _nameController.text.trim();
     String keyword = _keywordController.text.trim();
@@ -1135,7 +1216,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       minute: tp.minute,
     )).toList();
 
-    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes, _avatarPath);
+    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes, _avatarPath, _timeRangeType);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(widget.radar != null ? '雷达修改成功' : '雷达创建成功')),
@@ -1216,26 +1297,41 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
               ),
             ),
             const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                _buildTimeRangeChip('前一天', TimeRangeType.lastDay),
+                _buildTimeRangeChip('前三天', TimeRangeType.lastThreeDays),
+                _buildTimeRangeChip('前七天', TimeRangeType.lastSevenDays),
+                _buildTimeRangeChip('前一个月', TimeRangeType.lastMonth),
+              ],
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: InkWell(
-                    onTap: () => _showDatePicker(isStart: true),
+                    onTap: () {
+                      setState(() => _timeRangeType = TimeRangeType.custom);
+                      _showDatePicker(isStart: true);
+                    },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           const Text(
                             '开始时间',
-                            style: TextStyle(color: textSecondary),
+                            style: TextStyle(color: textSecondary, fontSize: 11),
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            '${_startDate.year}-${_startDate.month.toString().padLeft(2, '0')}-${_startDate.day.toString().padLeft(2, '0')}',
+                            '${_startDate.year}.${_startDate.month}.${_startDate.day}',
+                            style: const TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
@@ -1245,22 +1341,27 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: InkWell(
-                    onTap: () => _showDatePicker(isStart: false),
+                    onTap: () {
+                      setState(() => _timeRangeType = TimeRangeType.custom);
+                      _showDatePicker(isStart: false);
+                    },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           const Text(
                             '结束时间',
-                            style: TextStyle(color: textSecondary),
+                            style: TextStyle(color: textSecondary, fontSize: 11),
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            '${_endDate.year}-${_endDate.month.toString().padLeft(2, '0')}-${_endDate.day.toString().padLeft(2, '0')}',
+                            '${_endDate.year}.${_endDate.month}.${_endDate.day}',
+                            style: const TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
@@ -1767,46 +1868,48 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
               Expanded(
                 child: Container(
                   decoration: cardDecoration,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   child: InkWell(
                     onTap: () => _showDatePicker(isStart: true),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Text(
                           '起始日期',
-                          style: TextStyle(color: textSecondary),
+                          style: TextStyle(color: textSecondary, fontSize: 11),
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           _localStartDate != null
-                              ? "${_localStartDate!.year}-${_localStartDate!.month.toString().padLeft(2, '0')}-${_localStartDate!.day.toString().padLeft(2, '0')}"
+                              ? "${_localStartDate!.year}.${_localStartDate!.month}.${_localStartDate!.day}"
                               : '选择日期',
-                          style: const TextStyle(color: textPrimary),
+                          style: const TextStyle(color: textPrimary, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: Container(
                   decoration: cardDecoration,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   child: InkWell(
                     onTap: () => _showDatePicker(isStart: false),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Text(
                           '结束日期',
-                          style: TextStyle(color: textSecondary),
+                          style: TextStyle(color: textSecondary, fontSize: 11),
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           _localEndDate != null
-                              ? "${_localEndDate!.year}-${_localEndDate!.month.toString().padLeft(2, '0')}-${_localEndDate!.day.toString().padLeft(2, '0')}"
+                              ? "${_localEndDate!.year}.${_localEndDate!.month}.${_localEndDate!.day}"
                               : '选择日期',
-                          style: const TextStyle(color: textPrimary),
+                          style: const TextStyle(color: textPrimary, fontSize: 12),
                         ),
                       ],
                     ),

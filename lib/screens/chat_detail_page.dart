@@ -324,8 +324,30 @@ class ChatDetailPage extends StatelessWidget {
   }
 
   Future<void> _launchUrl(String? url) async {
-    if (url != null && await canLaunchUrlString(url)) {
+    if (url == null) return;
+
+    if (url.contains('bilibili.com/video/')) {
+      String? videoId = _extractBilibiliVideoId(url);
+      if (videoId != null) {
+        String bilibiliScheme = 'bilibili://video/$videoId';
+        if (await canLaunchUrlString(bilibiliScheme)) {
+          await launchUrlString(bilibiliScheme);
+          return;
+        }
+      }
+    }
+
+    if (await canLaunchUrlString(url)) {
       await launchUrlString(url);
     }
+  }
+
+  String? _extractBilibiliVideoId(String url) {
+    RegExp regex = RegExp(r'bilibili\.com/video/([A-Za-z0-9]+)');
+    Match? match = regex.firstMatch(url);
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1);
+    }
+    return null;
   }
 }

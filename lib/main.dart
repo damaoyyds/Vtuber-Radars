@@ -58,6 +58,8 @@ class _MainScreenState extends State<MainScreen> {
   Set<String> _selectedRadarIds = {};
   List<Message> _messages = [];
   String _cacheSize = '0 KB';
+  bool _isMessageSelectMode = false;
+  Set<String> _selectedMessageRadarNames = {};
 
   @override
   void initState() {
@@ -163,9 +165,139 @@ class _MainScreenState extends State<MainScreen> {
     await _loadRadarConfigs();
   }
 
+  void _showClearAllMessagesDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('清空所有消息'),
+          content: const Text('确定要清空所有消息吗？此操作不可恢复。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await MessageStorage.clearAllMessages();
+                setState(() {
+                  _messages = [];
+                  _isMessageSelectMode = false;
+                  _selectedMessageRadarNames.clear();
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('所有消息已清空')),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('清空'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _selectAllMessages() {
+    Map<String, List<Message>> groupedMessages = {};
+    for (var msg in _messages) {
+      if (!groupedMessages.containsKey(msg.radarName)) {
+        groupedMessages[msg.radarName] = [];
+      }
+      groupedMessages[msg.radarName]!.add(msg);
+    }
+    setState(() {
+      _selectedMessageRadarNames = groupedMessages.keys.toSet();
+    });
+  }
+
+  void _deleteSelectedMessages() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('删除选中的消息'),
+          content: Text('确定要删除选中的 ${_selectedMessageRadarNames.length} 个消息会话吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                for (var radarName in _selectedMessageRadarNames) {
+                  await MessageStorage.removeMessagesByRadarName(radarName);
+                }
+                setState(() {
+                  _messages = _messages
+                      .where((msg) => !_selectedMessageRadarNames.contains(msg.radarName))
+                      .toList();
+                  _isMessageSelectMode = false;
+                  _selectedMessageRadarNames.clear();
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('消息删除成功')),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: _selectedIndex == 2
+          ? AppBar(
+              title: _isMessageSelectMode
+                  ? Text('已选择 ${_selectedMessageRadarNames.length} 项')
+                  : const Text('消息'),
+              automaticallyImplyLeading: false,
+              leading: _isMessageSelectMode
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        setState(() {
+                          _isMessageSelectMode = false;
+                          _selectedMessageRadarNames.clear();
+                        });
+                      },
+                    )
+                  : null,
+              actions: _messages.isNotEmpty
+                  ? [
+                      if (_isMessageSelectMode)
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: _selectAllMessages,
+                              child: const Text('全选'),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete),
+                              onPressed: _deleteSelectedMessages,
+                            ),
+                          ],
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.delete_sweep),
+                          onPressed: () {
+                            setState(() {
+                              _isMessageSelectMode = true;
+                            });
+                          },
+                        ),
+                    ]
+                  : null,
+            )
+          : null,
       body: Container(
         decoration: bgGradient,
         child: _buildPage(),
@@ -213,18 +345,18 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
-          const SizedBox(height: 60),
+          const SizedBox(height: 16),
           if (groupedMessages.isEmpty)
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 180,
-                    height: 180,
+                    width: 160,
+                    height: 160,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [primaryColor, secondaryColor],
@@ -235,35 +367,35 @@ class _MainScreenState extends State<MainScreen> {
                       boxShadow: [
                         BoxShadow(
                           color: primaryColor.withOpacity(0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
                     child: const Icon(
                       Icons.message,
-                      size: 80,
+                      size: 70,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   const Text(
                     '暂无消息',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   const Text(
                     '快去创建雷达或进行搜索吧',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       color: textSecondary,
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -276,15 +408,15 @@ class _MainScreenState extends State<MainScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
+                            borderRadius: BorderRadius.circular(25),
                           ),
                           elevation: 0,
                         ),
                         child: const Text('创建雷达'),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                       OutlinedButton(
                         onPressed: () {
                           setState(() {
@@ -292,9 +424,9 @@ class _MainScreenState extends State<MainScreen> {
                           });
                         },
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
+                            borderRadius: BorderRadius.circular(25),
                           ),
                           side: const BorderSide(color: primaryColor),
                         ),
@@ -321,6 +453,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildConversationItem(String radarName, List<Message> messages, Message latestMsg) {
     int unreadCount = messages.where((m) => m.type != MessageType.searching).length;
+    bool isSelected = _selectedMessageRadarNames.contains(radarName);
     
     RadarConfig? radar = _radarConfigs.firstWhere(
       (r) => r.name == radarName,
@@ -335,16 +468,25 @@ class _MainScreenState extends State<MainScreen> {
     
     return InkWell(
       onTap: () {
-        RadarConfig? radarConfig = _radarConfigs.firstWhere(
-            (config) => config.name == radarName,
-            orElse: () => RadarConfig(
-              id: '',
-              name: radarName,
-              keyword: '',
-              selectedOrgIds: [],
-              createdAt: DateTime.now(),
-            ),
-          );
+        if (_isMessageSelectMode) {
+          setState(() {
+            if (isSelected) {
+              _selectedMessageRadarNames.remove(radarName);
+            } else {
+              _selectedMessageRadarNames.add(radarName);
+            }
+          });
+        } else {
+          RadarConfig? radarConfig = _radarConfigs.firstWhere(
+              (config) => config.name == radarName,
+              orElse: () => RadarConfig(
+                id: '',
+                name: radarName,
+                keyword: '',
+                selectedOrgIds: [],
+                createdAt: DateTime.now(),
+              ),
+            );
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -357,14 +499,47 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
           );
+        }
       },
-      onLongPress: () => _showDeleteConversationDialog(radarName),
+      onLongPress: () {
+        if (!_isMessageSelectMode) {
+          setState(() {
+            _isMessageSelectMode = true;
+            _selectedMessageRadarNames.add(radarName);
+          });
+        }
+      },
       child: Container(
-        decoration: cardDecoration,
+        decoration: BoxDecoration(
+          color: isSelected ? primaryColor.withOpacity(0.1) : cardBg,
+          borderRadius: BorderRadius.circular(borderRadius),
+          border: Border.all(color: cardBorder, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         padding: const EdgeInsets.all(16),
         margin: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
+            if (_isMessageSelectMode)
+              Checkbox(
+                value: isSelected,
+                onChanged: (value) {
+                  setState(() {
+                    if (value == true) {
+                      _selectedMessageRadarNames.add(radarName);
+                    } else {
+                      _selectedMessageRadarNames.remove(radarName);
+                    }
+                  });
+                },
+                activeColor: primaryColor,
+              ),
             CircleAvatar(
               radius: 28,
               backgroundImage: radar.avatarPath != null && radar.id.isNotEmpty

@@ -196,45 +196,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<void> _deleteRadar(String id) async {
-    await RadarStorage.deleteRadarConfig(id);
-    await _loadRadarConfigs();
-  }
-
-  void _showClearAllMessagesDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('清空所有消息'),
-          content: const Text('确定要清空所有消息吗？此操作不可恢复。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () async {
-                await MessageStorage.clearAllMessages();
-                setState(() {
-                  _messages = [];
-                  _isMessageSelectMode = false;
-                  _selectedMessageRadarNames.clear();
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('所有消息已清空')),
-                );
-              },
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('清空'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _selectAllMessages() {
     Map<String, List<Message>> groupedMessages = {};
     for (var msg in _messages) {
@@ -646,35 +607,6 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  void _showDeleteConversationDialog(String radarName) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('删除会话'),
-          content: Text('确定要删除 \"$radarName\" 的所有消息吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () async {
-                await _deleteMessagesByRadarName(radarName);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('消息删除成功')),
-                );
-              },
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('删除'),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -1203,12 +1135,6 @@ class _MainScreenState extends State<MainScreen> {
         _messages.insert(0, errorMsg);
       });
       await MessageStorage.saveMessages(_messages);
-    }
-  }
-
-  Future<void> _launchUrl(String? url) async {
-    if (url != null && await canLaunchUrlString(url)) {
-      await launchUrlString(url);
     }
   }
 
@@ -2296,7 +2222,7 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
         children: [
           const SizedBox(height: 60),
           const Text(
-            '发现',
+            '搜索',
             style: TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.bold,
@@ -2384,33 +2310,14 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            children: organizations.entries.map((entry) {
-              return FilterChip(
-                label: Text(entry.value.name),
-                selected: _localSelectedOrgs[entry.key] ?? false,
-                onSelected: (selected) {
-                  setState(() {
-                    _localSelectedOrgs[entry.key] = selected;
-                  });
-                },
-                backgroundColor: cardBg,
-                selectedColor: primaryColor.withOpacity(0.1),
-                selectedShadowColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                labelStyle: TextStyle(
-                  color: _localSelectedOrgs[entry.key] ?? false ? primaryColor : textSecondary,
-                ),
-                side: BorderSide(
-                  color: _localSelectedOrgs[entry.key] ?? false ? primaryColor : cardBorder,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              );
-            }).toList(),
+          OrgChipGrid(
+            organizations: organizations,
+            selectedOrgs: _localSelectedOrgs,
+            onOrgSelected: (key, selected) {
+              setState(() {
+                _localSelectedOrgs[key] = selected;
+              });
+            },
           ),
           const SizedBox(height: 24),
           Row(

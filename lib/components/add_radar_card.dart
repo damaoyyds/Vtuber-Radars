@@ -11,13 +11,26 @@ class AddRadarCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(borderRadius),
       child: Container(
-        decoration: cardDecoration,
-        padding: const EdgeInsets.all(20),
         margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: primaryColor.withOpacity(0.2),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(18),
         child: Row(
           children: [
             Container(
@@ -25,18 +38,22 @@ class AddRadarCard extends StatelessWidget {
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: primaryColor,
-                  width: 2,
-                ),
+                color: primaryColor.withOpacity(0.1),
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(0.15),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                  ),
+                ],
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.add,
                 color: primaryColor,
                 size: 32,
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,8 +61,8 @@ class AddRadarCard extends StatelessWidget {
                   Text(
                     '新建雷达',
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
                       color: textPrimary,
                     ),
                   ),
@@ -53,16 +70,24 @@ class AddRadarCard extends StatelessWidget {
                   Text(
                     '添加你关注的 VTuber',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       color: textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
-              Icons.arrow_forward_ios,
-              color: textTertiary,
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.arrow_forward_ios,
+                color: primaryColor,
+                size: 16,
+              ),
             ),
           ],
         ),

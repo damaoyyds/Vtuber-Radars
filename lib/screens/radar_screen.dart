@@ -108,7 +108,7 @@ class _RadarScreenState extends State<RadarScreen> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text('关键词: ${config.keyword}'),
+                            Text('关键词: ${config.keywords.join(', ')}'),
                             Text('组织: ${_getOrgNames(config.selectedOrgIds)}'),
                             if (config.startDate != null)
                               Text('起始日期: ${config.startDate!.year}-${config.startDate!.month.toString().padLeft(2, '0')}-${config.startDate!.day.toString().padLeft(2, '0')}'),

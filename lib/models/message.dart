@@ -8,6 +8,7 @@ class Message {
   final String? text;
   final ClipItem? clipItem;
   final String? keyword;
+  final bool isRead;
 
   Message({
     required this.id,
@@ -17,7 +18,21 @@ class Message {
     this.text,
     this.clipItem,
     this.keyword,
+    this.isRead = false,
   });
+
+  Message copyWith({bool? isRead}) {
+    return Message(
+      id: id,
+      radarName: radarName,
+      timestamp: timestamp,
+      type: type,
+      text: text,
+      clipItem: clipItem,
+      keyword: keyword,
+      isRead: isRead ?? this.isRead,
+    );
+  }
 }
 
 enum MessageType {

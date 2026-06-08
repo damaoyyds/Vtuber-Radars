@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/radar_config.dart';
+import '../models/schedule_time.dart';
 
 class RadarStorage {
   static const String _key = 'vtuber_radar_configs';
-  static const String _lastAutoSearchKey = 'last_auto_search_time';
+  static const String _lastAutoSearchKeyPrefix = 'last_auto_search_time_';
 
   static Future<List<RadarConfig>> getRadarConfigs() async {
     final prefs = await SharedPreferences.getInstance();
@@ -37,17 +38,23 @@ class RadarStorage {
     await prefs.setString(_key, jsonString);
   }
 
-  static Future<DateTime?> getLastAutoSearchTime() async {
+  static String _getAutoSearchKey(String radarId, ScheduleTime scheduleTime) {
+    return '${_lastAutoSearchKeyPrefix}${radarId}_${scheduleTime.hour}_${scheduleTime.minute}';
+  }
+
+  static Future<DateTime?> getLastAutoSearchTime(String radarId, ScheduleTime scheduleTime) async {
     final prefs = await SharedPreferences.getInstance();
-    final timeString = prefs.getString(_lastAutoSearchKey);
+    final key = _getAutoSearchKey(radarId, scheduleTime);
+    final timeString = prefs.getString(key);
     if (timeString == null) {
       return null;
     }
     return DateTime.parse(timeString);
   }
 
-  static Future<void> setLastAutoSearchTime(DateTime time) async {
+  static Future<void> setLastAutoSearchTime(String radarId, ScheduleTime scheduleTime, DateTime time) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_lastAutoSearchKey, time.toIso8601String());
+    final key = _getAutoSearchKey(radarId, scheduleTime);
+    await prefs.setString(key, time.toIso8601String());
   }
 }

@@ -55,6 +55,16 @@ class MessageStorage {
     await prefs.remove(_key);
   }
 
+  static Future<void> markMessagesAsRead(String radarName) async {
+    final messages = await loadMessages();
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].radarName == radarName && !messages[i].isRead) {
+        messages[i] = messages[i].copyWith(isRead: true);
+      }
+    }
+    await saveMessages(messages);
+  }
+
   static Map<String, dynamic> _messageToJson(Message message) {
     return {
       'id': message.id,
@@ -64,6 +74,7 @@ class MessageStorage {
       'text': message.text,
       'clipItem': message.clipItem != null ? _clipItemToJson(message.clipItem!) : null,
       'keyword': message.keyword,
+      'isRead': message.isRead,
     };
   }
 
@@ -76,6 +87,7 @@ class MessageStorage {
       text: json['text'],
       clipItem: json['clipItem'] != null ? _clipItemFromJson(json['clipItem']) : null,
       keyword: json['keyword'],
+      isRead: json['isRead'] as bool? ?? false,
     );
   }
 

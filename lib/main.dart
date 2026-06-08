@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,6 +10,7 @@ import './theme/app_theme.dart';
 import './components/bottom_navigation.dart';
 import './components/add_radar_card.dart';
 import './components/radar_card.dart';
+import './components/org_chip.dart';
 import './models/radar_config.dart';
 import './models/schedule_time.dart';
 import './models/organization.dart';
@@ -18,11 +20,13 @@ import './services/search_api.dart';
 import './services/radar_storage.dart';
 import './services/data_store_service.dart';
 import './services/message_storage.dart';
+import './services/background_task_service.dart';
 import './screens/chat_detail_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SharedPreferences.getInstance();
+  await BackgroundTaskService.initialize();
   runApp(const MyApp());
 }
 
@@ -60,6 +64,7 @@ class _MainScreenState extends State<MainScreen> {
   String _cacheSize = '0 KB';
   bool _isMessageSelectMode = false;
   Set<String> _selectedMessageRadarNames = {};
+  Timer? _autoSearchTimer;
 
   @override
   void initState() {
@@ -70,6 +75,20 @@ class _MainScreenState extends State<MainScreen> {
     _endDate = DateTime.now();
     _startDate = DateTime.now().subtract(const Duration(days: 30));
     _initApp();
+    _startAutoSearchTimer();
+  }
+
+  void _startAutoSearchTimer() {
+    _autoSearchTimer?.cancel();
+    _autoSearchTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      _checkAndRunAutoSearch();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoSearchTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _initApp() async {
@@ -98,18 +117,36 @@ class _MainScreenState extends State<MainScreen> {
       _radarConfigs = configs;
     });
     _checkAndRunAutoSearch();
+    _scheduleBackgroundAutoSearch();
+  }
+
+  Future<void> _scheduleBackgroundAutoSearch() async {
+    for (var radar in _radarConfigs) {
+      if (radar.isAutoSearch && radar.isAutoSearchEnabled) {
+        for (var scheduleTime in radar.scheduleTimes) {
+          await BackgroundTaskService.scheduleAutoSearch(scheduleTime.hour, scheduleTime.minute);
+        }
+      }
+    }
+  }
+
+  Future<void> _markAsRead(String radarName) async {
+    await MessageStorage.markMessagesAsRead(radarName);
+    setState(() {
+      for (var i = 0; i < _messages.length; i++) {
+        if (_messages[i].radarName == radarName) {
+          _messages[i] = _messages[i].copyWith(isRead: true);
+        }
+      }
+    });
   }
 
   Future<void> _checkAndRunAutoSearch() async {
     final now = DateTime.now();
-    final lastAutoSearchTime = await RadarStorage.getLastAutoSearchTime();
-    final lastDate = lastAutoSearchTime ?? DateTime(2020);
 
     for (var radar in _radarConfigs) {
       if (radar.isAutoSearch && radar.isAutoSearchEnabled) {
-        // 检查每个预定时间点
         for (var scheduleTime in radar.scheduleTimes) {
-          // 计算今天的预定搜索时间
           final todayScheduledTime = DateTime(
             now.year,
             now.month,
@@ -118,23 +155,22 @@ class _MainScreenState extends State<MainScreen> {
             scheduleTime.minute,
           );
 
-          // 检查是否已经执行过今天这个时间点的自动搜索
-          final alreadyRanToday = lastDate.year == now.year &&
-              lastDate.month == now.month &&
-              lastDate.day == now.day;
+          final lastAutoSearchTime = await RadarStorage.getLastAutoSearchTime(radar.id, scheduleTime);
+          
+          bool alreadyRanToday = false;
+          if (lastAutoSearchTime != null) {
+            alreadyRanToday = lastAutoSearchTime.year == now.year &&
+                lastAutoSearchTime.month == now.month &&
+                lastAutoSearchTime.day == now.day;
+          }
 
-          // 检查当前时间是否已过设定时间，且今天还未执行过，且距离上次执行已经超过1小时（避免重复执行）
           bool shouldRun = !alreadyRanToday && 
               now.isAfter(todayScheduledTime) &&
               now.difference(todayScheduledTime).inMinutes >= 1;
 
           if (shouldRun) {
-            // 执行搜索
-            _searchWithRadar(radar);
-
-            // 更新最后执行时间
-            await RadarStorage.setLastAutoSearchTime(now);
-            break;
+            await _autoSearchWithRadar(radar);
+            await RadarStorage.setLastAutoSearchTime(radar.id, scheduleTime, now);
           }
         }
       }
@@ -143,7 +179,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _onApplyRadar(RadarConfig config) {
     setState(() {
-      _keywordController.text = config.keyword;
+      _keywordController.text = config.keywords.join(', ');
       _startDate = config.startDate;
       _endDate = config.endDate;
       _selectedOrgs.updateAll((key, value) => config.selectedOrgIds.contains(key));
@@ -452,7 +488,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildConversationItem(String radarName, List<Message> messages, Message latestMsg) {
-    int unreadCount = messages.where((m) => m.type != MessageType.searching).length;
+    int unreadCount = messages.where((m) => !m.isRead && m.type != MessageType.searching).length;
     bool isSelected = _selectedMessageRadarNames.contains(radarName);
     
     RadarConfig? radar = _radarConfigs.firstWhere(
@@ -460,14 +496,14 @@ class _MainScreenState extends State<MainScreen> {
       orElse: () => RadarConfig(
         id: '',
         name: radarName,
-        keyword: '',
+        keywords: [],
         selectedOrgIds: [],
         createdAt: DateTime.now(),
       ),
     );
     
     return InkWell(
-      onTap: () {
+      onTap: () async {
         if (_isMessageSelectMode) {
           setState(() {
             if (isSelected) {
@@ -477,12 +513,14 @@ class _MainScreenState extends State<MainScreen> {
             }
           });
         } else {
+          await _markAsRead(radarName);
+          
           RadarConfig? radarConfig = _radarConfigs.firstWhere(
               (config) => config.name == radarName,
               orElse: () => RadarConfig(
                 id: '',
                 name: radarName,
-                keyword: '',
+                keywords: [],
                 selectedOrgIds: [],
                 createdAt: DateTime.now(),
               ),
@@ -655,42 +693,101 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildRadarPage() {
+    int totalRadars = _radarConfigs.length;
+    int autoSearchCount = _radarConfigs.where((r) => r.isAutoSearch && r.isAutoSearchEnabled).length;
+    
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 60),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '我的雷达',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: textPrimary,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    '我的雷达',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: textPrimary,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '追踪你关注的 VTuber 动态',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: textSecondary,
+                    ),
+                  ),
+                ],
               ),
               if (_radarConfigs.isNotEmpty)
-                TextButton(
-                  onPressed: _toggleSelectMode,
-                  child: Text(
-                    _isSelectMode ? '取消' : '编辑',
-                    style: const TextStyle(color: primaryColor),
+                GestureDetector(
+                  onTap: _toggleSelectMode,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _isSelectMode 
+                          ? const Color(0xFFEF4444).withOpacity(0.1)
+                          : primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _isSelectMode
+                            ? const Color(0xFFEF4444).withOpacity(0.3)
+                            : primaryColor.withOpacity(0.2),
+                      ),
+                    ),
+                    child: Text(
+                      _isSelectMode ? '取消' : '编辑',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _isSelectMode ? const Color(0xFFEF4444) : primaryColor,
+                      ),
+                    ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.radar,
+                  label: '总雷达',
+                  value: totalRadars.toString(),
+                  color: primaryColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.auto_mode,
+                  label: '自动搜索',
+                  value: autoSearchCount.toString(),
+                  color: const Color(0xFF10B981),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
           const Text(
-            '追踪你关注的 VTuber 动态',
+            '雷达列表',
             style: TextStyle(
               fontSize: 16,
-              color: textSecondary,
+              fontWeight: FontWeight.w600,
+              color: textPrimary,
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
           ..._radarConfigs.map((radar) {
             return RadarCard(
               radar: radar,
@@ -701,7 +798,6 @@ class _MainScreenState extends State<MainScreen> {
                   _onApplyRadar(radar);
                 }
               },
-              onDelete: () => _deleteRadar(radar.id),
               onSearch: () => _searchWithRadar(radar),
               onToggleAutoSearch: radar.isAutoSearch ? () => _toggleAutoSearch(radar) : null,
               onDoubleTap: () => _showEditRadarDialog(radar),
@@ -714,23 +810,142 @@ class _MainScreenState extends State<MainScreen> {
           ),
           if (_isSelectMode && _selectedRadarIds.isNotEmpty)
             Container(
+              margin: const EdgeInsets.only(top: 16),
               padding: const EdgeInsets.all(16),
-              decoration: cardDecoration,
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: cardBorder,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
               child: Row(
                 children: [
-                  Text('已选择 ${_selectedRadarIds.length} 个雷达'),
-                  const Spacer(),
-                  ElevatedButton(
-                    onPressed: _deleteSelectedRadars,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text('删除'),
+                    child: Text(
+                      '已选 ${_selectedRadarIds.length} 个',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: primaryColor,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _deleteSelectedRadars,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFEF4444).withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            '删除',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
           const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: textSecondary,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -811,90 +1026,21 @@ class _MainScreenState extends State<MainScreen> {
     );
 
     try {
-      DateTime now = DateTime.now();
-      DateTime effectiveStartDate;
-      DateTime effectiveEndDate;
-
-      switch (radar.timeRangeType) {
-        case TimeRangeType.lastDay:
-          effectiveStartDate = now.subtract(const Duration(days: 1));
-          effectiveEndDate = now;
-          break;
-        case TimeRangeType.lastThreeDays:
-          effectiveStartDate = now.subtract(const Duration(days: 3));
-          effectiveEndDate = now;
-          break;
-        case TimeRangeType.lastSevenDays:
-          effectiveStartDate = now.subtract(const Duration(days: 7));
-          effectiveEndDate = now;
-          break;
-        case TimeRangeType.lastMonth:
-          effectiveStartDate = now.subtract(const Duration(days: 30));
-          effectiveEndDate = now;
-          break;
-        default:
-          effectiveStartDate = radar.startDate ?? now.subtract(const Duration(days: 30));
-          effectiveEndDate = radar.endDate ?? now;
-      }
-
-      String? startDateStr = effectiveStartDate.toIso8601String().split('T')[0];
-      String? endDateStr = effectiveEndDate.toIso8601String().split('T')[0];
-
-      SearchResult result = await SearchApi.fetchSearchResults(
-        radar.keyword,
-        radar.selectedOrgIds,
-        startDate: startDateStr,
-        endDate: endDateStr,
-      );
-
-      List<ClipItem> newItems = await DataStoreService.findNewItems(radar.id, result.items);
-      await DataStoreService.addItemsToStore(radar.id, newItems);
-
-      Navigator.pop(context);
-
-      List<Message> newMessages = [];
-      if (newItems.isEmpty) {
-        newMessages.add(Message(
-          id: const Uuid().v4(),
-          radarName: radar.name,
-          timestamp: DateTime.now(),
-          type: MessageType.searchComplete,
-          text: '搜索完成，没有新数据',
-        ));
-      } else {
-        Set<String> authorNames = newItems.map((item) => item.author.name).toSet();
-        String authorsText = authorNames.join('、');
-        
-        newMessages.add(Message(
-          id: const Uuid().v4(),
-          radarName: radar.name,
-          timestamp: DateTime.now(),
-          type: MessageType.searchComplete,
-          text: '$authorsText 提到了 ${radar.keyword}',
-        ));
-        for (var item in newItems) {
-          newMessages.add(Message(
-            id: const Uuid().v4(),
-            radarName: radar.name,
-            timestamp: DateTime.now(),
-            type: MessageType.searchComplete,
-            clipItem: item,
-            keyword: radar.keyword,
-          ));
-        }
-      }
+      List<Message> newMessages = await _executeSearch(radar);
 
       setState(() {
         _messages.insertAll(0, newMessages);
       });
       await MessageStorage.saveMessages(_messages);
 
+      Navigator.pop(context);
+
       showDialog(
         context: context,
         builder: (context) {
           return AlertDialog(
             title: const Text('搜索完成'),
-            content: Text('搜索完成，搜索到 ${newItems.length} 条数据，请前往消息页面查看'),
+            content: Text('搜索完成，搜索到 ${newMessages.where((m) => m.clipItem != null).length} 条数据，请前往消息页面查看'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -944,6 +1090,119 @@ class _MainScreenState extends State<MainScreen> {
           );
         },
       );
+    }
+  }
+
+  Future<List<Message>> _executeSearch(RadarConfig radar) async {
+    DateTime now = DateTime.now();
+    DateTime effectiveStartDate;
+    DateTime effectiveEndDate;
+
+    switch (radar.timeRangeType) {
+      case TimeRangeType.lastDay:
+        effectiveStartDate = now.subtract(const Duration(days: 1));
+        effectiveEndDate = now;
+        break;
+      case TimeRangeType.lastThreeDays:
+        effectiveStartDate = now.subtract(const Duration(days: 3));
+        effectiveEndDate = now;
+        break;
+      case TimeRangeType.lastSevenDays:
+        effectiveStartDate = now.subtract(const Duration(days: 7));
+        effectiveEndDate = now;
+        break;
+      case TimeRangeType.lastMonth:
+        effectiveStartDate = now.subtract(const Duration(days: 30));
+        effectiveEndDate = now;
+        break;
+      default:
+        effectiveStartDate = radar.startDate ?? now.subtract(const Duration(days: 30));
+        effectiveEndDate = radar.endDate ?? now;
+    }
+
+    String? startDateStr = effectiveStartDate.toIso8601String().split('T')[0];
+    String? endDateStr = effectiveEndDate.toIso8601String().split('T')[0];
+
+    List<ClipItem> allNewItems = [];
+    Map<String, List<ClipItem>> itemsByKeyword = {};
+
+    for (String keyword in radar.keywords) {
+      SearchResult result = await SearchApi.fetchSearchResults(
+        keyword,
+        radar.selectedOrgIds,
+        startDate: startDateStr,
+        endDate: endDateStr,
+      );
+
+      List<ClipItem> newItems = await DataStoreService.findNewItems(radar.id, result.items);
+      await DataStoreService.addItemsToStore(radar.id, newItems);
+      
+      allNewItems.addAll(newItems);
+      itemsByKeyword[keyword] = newItems;
+    }
+
+    List<Message> newMessages = [];
+    if (allNewItems.isEmpty) {
+      newMessages.add(Message(
+        id: const Uuid().v4(),
+        radarName: radar.name,
+        timestamp: DateTime.now(),
+        type: MessageType.searchComplete,
+        text: '搜索完成，没有新数据',
+      ));
+    } else {
+      Set<String> authorNames = allNewItems.map((item) => item.author.name).toSet();
+      String authorsText = authorNames.join('、');
+      String firstKeyword = radar.keywords.isNotEmpty ? radar.keywords.first : '';
+      
+      newMessages.add(Message(
+        id: const Uuid().v4(),
+        radarName: radar.name,
+        timestamp: DateTime.now(),
+        type: MessageType.searchComplete,
+        text: '$authorsText 提到了 $firstKeyword',
+      ));
+      
+      for (var entry in itemsByKeyword.entries) {
+        String keyword = entry.key;
+        List<ClipItem> items = entry.value;
+        
+        for (var item in items) {
+          newMessages.add(Message(
+            id: const Uuid().v4(),
+            radarName: radar.name,
+            timestamp: DateTime.now(),
+            type: MessageType.searchComplete,
+            clipItem: item,
+            keyword: keyword,
+          ));
+        }
+      }
+    }
+    return newMessages;
+  }
+
+  Future<void> _autoSearchWithRadar(RadarConfig radar) async {
+    try {
+      List<Message> newMessages = await _executeSearch(radar);
+      
+      setState(() {
+        _messages.insertAll(0, newMessages);
+      });
+      await MessageStorage.saveMessages(_messages);
+    } catch (e) {
+      final errorMsg = Message(
+        id: const Uuid().v4(),
+        radarName: radar.name,
+        timestamp: DateTime.now(),
+        type: MessageType.searchError,
+        text: '自动搜索失败: $e',
+      );
+
+      setState(() {
+        _messages.insert(0, errorMsg);
+      });
+      await MessageStorage.saveMessages(_messages);
     }
   }
 
@@ -1072,11 +1331,11 @@ class _MainScreenState extends State<MainScreen> {
       context: context,
       builder: (context) {
         return _CreateRadarDialog(
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath, timeRangeType) async {
+          onSave: (name, keywords, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath, timeRangeType) async {
             final config = RadarConfig(
               id: const Uuid().v4(),
               name: name,
-              keyword: keyword,
+              keywords: keywords,
               selectedOrgIds: orgIds,
               startDate: startDate,
               endDate: endDate,
@@ -1100,11 +1359,11 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context) {
         return _CreateRadarDialog(
           radar: radar,
-          onSave: (name, keyword, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath, timeRangeType) async {
+          onSave: (name, keywords, orgIds, startDate, endDate, isAutoSearch, scheduleTimes, avatarPath, timeRangeType) async {
             final updatedConfig = RadarConfig(
               id: radar.id,
               name: name,
-              keyword: keyword,
+              keywords: keywords,
               selectedOrgIds: orgIds,
               startDate: startDate,
               endDate: endDate,
@@ -1133,7 +1392,7 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class _CreateRadarDialog extends StatefulWidget {
-  final Function(String, String, List<String>, DateTime, DateTime, bool, List<ScheduleTime>, String?, TimeRangeType) onSave;
+  final Function(String, List<String>, List<String>, DateTime, DateTime, bool, List<ScheduleTime>, String?, TimeRangeType) onSave;
   final RadarConfig? radar;
 
   const _CreateRadarDialog({
@@ -1159,7 +1418,8 @@ class _TimePointState {
 
 class _CreateRadarDialogState extends State<_CreateRadarDialog> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _keywordController = TextEditingController();
+  final TextEditingController _newKeywordController = TextEditingController();
+  List<String> _keywords = [];
   final Map<String, bool> _selectedOrgs = {};
   late DateTime _startDate;
   late DateTime _endDate;
@@ -1177,7 +1437,7 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
 
     if (widget.radar != null) {
       _nameController.text = widget.radar!.name;
-      _keywordController.text = widget.radar!.keyword;
+      _keywords = List.from(widget.radar!.keywords);
       _startDate = widget.radar!.startDate ?? DateTime.now().subtract(const Duration(days: 30));
       _endDate = widget.radar!.endDate ?? DateTime.now();
       _isAutoSearch = widget.radar!.isAutoSearch;
@@ -1200,6 +1460,22 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
         minute: 0,
       )];
     }
+  }
+
+  void _addKeyword() {
+    String keyword = _newKeywordController.text.trim();
+    if (keyword.isNotEmpty && !_keywords.contains(keyword)) {
+      setState(() {
+        _keywords.add(keyword);
+        _newKeywordController.clear();
+      });
+    }
+  }
+
+  void _removeKeyword(String keyword) {
+    setState(() {
+      _keywords.remove(keyword);
+    });
   }
 
   Future<void> _pickAvatar(ImageSource source) async {
@@ -1358,7 +1634,6 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
 
   void _handleSave() {
     String name = _nameController.text.trim();
-    String keyword = _keywordController.text.trim();
     List<String> selectedOrgIds = _selectedOrgs.entries
         .where((entry) => entry.value)
         .map((entry) => entry.key)
@@ -1371,9 +1646,9 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       return;
     }
 
-    if (keyword.isEmpty) {
+    if (_keywords.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入搜索关键词')),
+        const SnackBar(content: Text('请至少添加一个搜索关键词')),
       );
       return;
     }
@@ -1385,13 +1660,12 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
       return;
     }
 
-    // 将 _timePoints 转换为 ScheduleTime 列表
     List<ScheduleTime> scheduleTimes = _timePoints.map((tp) => ScheduleTime(
       hour: tp.hour,
       minute: tp.minute,
     )).toList();
 
-    widget.onSave(name, keyword, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes, _avatarPath, _timeRangeType);
+    widget.onSave(name, _keywords, selectedOrgIds, _startDate, _endDate, _isAutoSearch, scheduleTimes, _avatarPath, _timeRangeType);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(widget.radar != null ? '雷达修改成功' : '雷达创建成功')),
@@ -1456,12 +1730,43 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
               autofocus: true,
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _keywordController,
-              decoration: const InputDecoration(
-                labelText: '搜索关键词',
-                hintText: '请输入搜索关键词',
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '搜索关键词',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: _keywords.map((keyword) => Chip(
+                    label: Text(keyword),
+                    deleteIcon: const Icon(Icons.close),
+                    onDeleted: () => _removeKeyword(keyword),
+                  )).toList(),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newKeywordController,
+                        decoration: const InputDecoration(
+                          hintText: '输入关键词后按回车添加',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) => _addKeyword(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _addKeyword,
+                      child: const Text('添加'),
+                    ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             const Align(
@@ -1549,24 +1854,23 @@ class _CreateRadarDialogState extends State<_CreateRadarDialog> {
             const Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '选择组织:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                '选择组织',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  color: textPrimary,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: organizations.entries.map((entry) {
-                return FilterChip(
-                  label: Text(entry.value.name),
-                  selected: _selectedOrgs[entry.key] ?? false,
-                  onSelected: (selected) {
-                    setState(() {
-                      _selectedOrgs[entry.key] = selected;
-                    });
-                  },
-                );
-              }).toList(),
+            const SizedBox(height: 12),
+            OrgChipGrid(
+              organizations: organizations,
+              selectedOrgs: _selectedOrgs,
+              onOrgSelected: (key, selected) {
+                setState(() {
+                  _selectedOrgs[key] = selected;
+                });
+              },
             ),
             const SizedBox(height: 16),
             Row(
@@ -1807,13 +2111,30 @@ class SearchScreenWithState extends StatefulWidget {
 }
 
 class _SearchScreenWithStateState extends State<SearchScreenWithState> {
-  final TextEditingController _localKeywordController = TextEditingController();
+  final TextEditingController _newKeywordController = TextEditingController();
+  List<String> _keywords = [];
   final Map<String, bool> _localSelectedOrgs = {};
   DateTime? _localStartDate;
   DateTime? _localEndDate;
   SearchResult? _searchResult;
   bool _isLoading = false;
   String? _errorMessage;
+
+  void _addKeyword() {
+    String keyword = _newKeywordController.text.trim();
+    if (keyword.isNotEmpty && !_keywords.contains(keyword)) {
+      setState(() {
+        _keywords.add(keyword);
+        _newKeywordController.clear();
+      });
+    }
+  }
+
+  void _removeKeyword(String keyword) {
+    setState(() {
+      _keywords.remove(keyword);
+    });
+  }
 
   @override
   void initState() {
@@ -1822,7 +2143,6 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
   }
 
   void _syncWithParent() {
-    _localKeywordController.text = widget.keywordController.text;
     _localSelectedOrgs.clear();
     widget.selectedOrgs.forEach((key, value) {
       _localSelectedOrgs[key] = value;
@@ -1852,11 +2172,9 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
   }
 
   Future<void> _onSearch() async {
-    String keyword = _localKeywordController.text.trim();
-
-    if (keyword.isEmpty) {
+    if (_keywords.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入搜索关键词')),
+        const SnackBar(content: Text('请至少添加一个搜索关键词')),
       );
       return;
     }
@@ -1883,15 +2201,25 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
       String startDate = _localStartDate?.toIso8601String().split('T')[0] ?? '';
       String endDate = _localEndDate?.toIso8601String().split('T')[0] ?? '';
 
-      SearchResult result = await SearchApi.fetchSearchResults(
-        keyword,
-        selectedOrgIds,
-        startDate: startDate,
-        endDate: endDate,
-      );
+      List<ClipItem> allItems = [];
+      
+      for (String keyword in _keywords) {
+        SearchResult result = await SearchApi.fetchSearchResults(
+          keyword,
+          selectedOrgIds,
+          startDate: startDate,
+          endDate: endDate,
+        );
+        allItems.addAll(result.items);
+      }
+
+      allItems.sort((a, b) => b.datetime.compareTo(a.datetime));
 
       setState(() {
-        _searchResult = result;
+        _searchResult = SearchResult(
+          items: allItems,
+          pagination: Pagination(page: 1, totalPages: 1, total: allItems.length),
+        );
       });
     } catch (e) {
       setState(() {
@@ -1916,7 +2244,7 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
     }
   }
 
-  Widget _buildHighlightedText(String text, String pinyin, String keyword) {
+  Widget _buildHighlightedText(String text, String pinyin, String keywordsStr) {
     List<TextSpan> spans = [];
     String remaining = text;
 
@@ -1934,17 +2262,21 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
       }
     }
 
-    if (keyword.isNotEmpty && remaining.contains(keyword)) {
-      int index = remaining.indexOf(keyword);
-      if (index != -1) {
-        if (index > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, index)));
+    List<String> keywords = keywordsStr.split(',').map((k) => k.trim()).where((k) => k.isNotEmpty).toList();
+    
+    for (String keyword in keywords) {
+      if (keyword.isNotEmpty && remaining.contains(keyword)) {
+        int index = remaining.indexOf(keyword);
+        if (index != -1) {
+          if (index > 0) {
+            spans.add(TextSpan(text: remaining.substring(0, index)));
+          }
+          spans.add(TextSpan(
+            text: keyword,
+            style: const TextStyle(color: Colors.blue),
+          ));
+          remaining = remaining.substring(index + keyword.length);
         }
-        spans.add(TextSpan(
-          text: keyword,
-          style: const TextStyle(color: Colors.blue),
-        ));
-        remaining = remaining.substring(index + keyword.length);
       }
     }
 
@@ -1980,24 +2312,67 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
             ),
           ),
           const SizedBox(height: 32),
-          TextField(
-            controller: _localKeywordController,
-            decoration: InputDecoration(
-              hintText: '输入关键词搜索',
-              suffixIcon: const Icon(Icons.search, color: textTertiary),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(borderRadius),
-                borderSide: BorderSide(color: cardBorder),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                children: _keywords.map((keyword) => Chip(
+                  label: Text(keyword),
+                  deleteIcon: const Icon(Icons.close),
+                  onDeleted: () => _removeKeyword(keyword),
+                )).toList(),
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(borderRadius),
-                borderSide: BorderSide(color: primaryColor, width: 2),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _newKeywordController,
+                      decoration: InputDecoration(
+                        hintText: '输入关键词后按回车添加',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(borderRadius),
+                          borderSide: BorderSide(color: cardBorder),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(borderRadius),
+                          borderSide: BorderSide(color: primaryColor, width: 2),
+                        ),
+                        filled: true,
+                        fillColor: cardBg,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      ),
+                      onSubmitted: (_) => _addKeyword(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: primaryColor,
+                      borderRadius: BorderRadius.circular(borderRadius),
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(borderRadius),
+                        onTap: _addKeyword,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          child: Text(
+                            '添加',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              filled: true,
-              fillColor: cardBg,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-            ),
-            onSubmitted: (_) => _onSearch(),
+            ],
           ),
           const SizedBox(height: 24),
           const Text(
@@ -2227,7 +2602,7 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
                                       _buildHighlightedText(
                                         subtitle.cleanContent,
                                         subtitle.pinyin,
-                                        _localKeywordController.text.trim(),
+                                        _keywords.join(','),
                                       ),
                                     ],
                                   ),

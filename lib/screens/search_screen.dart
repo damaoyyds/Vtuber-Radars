@@ -6,6 +6,8 @@ import '../models/search_result.dart';
 import '../models/radar_config.dart';
 import '../services/search_api.dart';
 import '../services/radar_storage.dart';
+import '../components/org_chip.dart';
+import '../theme/app_theme.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -15,13 +17,30 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final TextEditingController _keywordController = TextEditingController();
+  final TextEditingController _newKeywordController = TextEditingController();
+  List<String> _keywords = [];
   final Map<String, bool> _selectedOrgs = {};
   DateTime? _startDate;
   DateTime? _endDate;
   SearchResult? _searchResult;
   bool _isLoading = false;
   String? _errorMessage;
+
+  void _addKeyword() {
+    String keyword = _newKeywordController.text.trim();
+    if (keyword.isNotEmpty && !_keywords.contains(keyword)) {
+      setState(() {
+        _keywords.add(keyword);
+        _newKeywordController.clear();
+      });
+    }
+  }
+
+  void _removeKeyword(String keyword) {
+    setState(() {
+      _keywords.remove(keyword);
+    });
+  }
 
   @override
   void initState() {
@@ -53,11 +72,9 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _onSearch() async {
-    String keyword = _keywordController.text.trim();
-    
-    if (keyword.isEmpty) {
+    if (_keywords.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入搜索关键词')),
+        const SnackBar(content: Text('请至少添加一个搜索关键词')),
       );
       return;
     }
@@ -84,15 +101,25 @@ class _SearchScreenState extends State<SearchScreen> {
       String startDate = _startDate?.toIso8601String().split('T')[0] ?? '';
       String endDate = _endDate?.toIso8601String().split('T')[0] ?? '';
 
-      SearchResult result = await SearchApi.fetchSearchResults(
-        keyword,
-        selectedOrgIds,
-        startDate: startDate,
-        endDate: endDate,
-      );
+      List<ClipItem> allItems = [];
+      
+      for (String keyword in _keywords) {
+        SearchResult result = await SearchApi.fetchSearchResults(
+          keyword,
+          selectedOrgIds,
+          startDate: startDate,
+          endDate: endDate,
+        );
+        allItems.addAll(result.items);
+      }
+
+      allItems.sort((a, b) => b.datetime.compareTo(a.datetime));
 
       setState(() {
-        _searchResult = result;
+        _searchResult = SearchResult(
+          items: allItems,
+          pagination: Pagination(page: 1, totalPages: 1, total: allItems.length),
+        );
       });
     } catch (e) {
       setState(() {
@@ -118,15 +145,14 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _saveRadarConfig() async {
-    String keyword = _keywordController.text.trim();
     List<String> selectedOrgIds = _selectedOrgs.entries
         .where((entry) => entry.value)
         .map((entry) => entry.key)
         .toList();
 
-    if (keyword.isEmpty) {
+    if (_keywords.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入搜索关键词')),
+        const SnackBar(content: Text('请至少添加一个搜索关键词')),
       );
       return;
     }
@@ -171,7 +197,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 final config = RadarConfig(
                   id: const Uuid().v4(),
                   name: name,
-                  keyword: keyword,
+                  keywords: _keywords,
                   selectedOrgIds: selectedOrgIds,
                   startDate: _startDate,
                   endDate: _endDate,
@@ -193,7 +219,7 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildHighlightedText(String text, String pinyin, String keyword) {
+  Widget _buildHighlightedText(String text, String pinyin, String keywordsStr) {
     List<TextSpan> spans = [];
     String remaining = text;
 
@@ -211,17 +237,21 @@ class _SearchScreenState extends State<SearchScreen> {
       }
     }
 
-    if (keyword.isNotEmpty && remaining.contains(keyword)) {
-      int index = remaining.indexOf(keyword);
-      if (index != -1) {
-        if (index > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, index)));
+    List<String> keywords = keywordsStr.split(',').map((k) => k.trim()).where((k) => k.isNotEmpty).toList();
+    
+    for (String keyword in keywords) {
+      if (keyword.isNotEmpty && remaining.contains(keyword)) {
+        int index = remaining.indexOf(keyword);
+        if (index != -1) {
+          if (index > 0) {
+            spans.add(TextSpan(text: remaining.substring(0, index)));
+          }
+          spans.add(TextSpan(
+            text: keyword,
+            style: const TextStyle(color: Colors.blue),
+          ));
+          remaining = remaining.substring(index + keyword.length);
         }
-        spans.add(TextSpan(
-          text: keyword,
-          style: const TextStyle(color: Colors.blue),
-        ));
-        remaining = remaining.substring(index + keyword.length);
       }
     }
 
@@ -243,34 +273,66 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              controller: _keywordController,
-              decoration: const InputDecoration(
-                labelText: '搜索关键词',
-                border: OutlineInputBorder(),
-                suffixIcon: Icon(Icons.search),
-              ),
-              onSubmitted: (_) => _onSearch(),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '搜索关键词',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: _keywords.map((keyword) => Chip(
+                    label: Text(keyword),
+                    deleteIcon: const Icon(Icons.close),
+                    onDeleted: () => _removeKeyword(keyword),
+                  )).toList(),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newKeywordController,
+                        decoration: const InputDecoration(
+                          hintText: '输入关键词后按回车添加',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) => _addKeyword(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _addKeyword,
+                      child: const Text('添加'),
+                    ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             const Text(
-              '选择组织 (支持多选):',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              '选择组织',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: textPrimary,
+              ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: organizations.entries.map((entry) {
-                return FilterChip(
-                  label: Text(entry.value.name),
-                  selected: _selectedOrgs[entry.key] ?? false,
-                  onSelected: (selected) {
-                    setState(() {
-                      _selectedOrgs[entry.key] = selected;
-                    });
-                  },
-                );
-              }).toList(),
+            const SizedBox(height: 12),
+            OrgChipGrid(
+              organizations: organizations,
+              selectedOrgs: _selectedOrgs,
+              onOrgSelected: (key, selected) {
+                setState(() {
+                  _selectedOrgs[key] = selected;
+                });
+              },
             ),
             const SizedBox(height: 16),
             Row(
@@ -422,7 +484,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                           _buildHighlightedText(
                                             subtitle.cleanContent,
                                             subtitle.pinyin,
-                                            _keywordController.text.trim(),
+                                            _keywords.join(','),
                                           ),
                                         ],
                                       ),

@@ -11,7 +11,7 @@ enum TimeRangeType {
 class RadarConfig {
   final String id;
   final String name;
-  final String keyword;
+  final List<String> keywords;
   final List<String> selectedOrgIds;
   final DateTime? startDate;
   final DateTime? endDate;
@@ -25,7 +25,7 @@ class RadarConfig {
   RadarConfig({
     required this.id,
     required this.name,
-    required this.keyword,
+    required this.keywords,
     required this.selectedOrgIds,
     this.startDate,
     this.endDate,
@@ -41,7 +41,7 @@ class RadarConfig {
     return {
       'id': id,
       'name': name,
-      'keyword': keyword,
+      'keywords': keywords,
       'selectedOrgIds': selectedOrgIds,
       'startDate': startDate?.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
@@ -69,10 +69,19 @@ class RadarConfig {
     int timeRangeIndex = json['timeRangeType'] as int? ?? 0;
     TimeRangeType timeRangeType = TimeRangeType.values[timeRangeIndex];
 
+    List<String> keywords;
+    if (json.containsKey('keywords') && json['keywords'] != null) {
+      keywords = List<String>.from(json['keywords'] as List);
+    } else if (json.containsKey('keyword') && json['keyword'] != null) {
+      keywords = [(json['keyword'] as String)];
+    } else {
+      keywords = [];
+    }
+
     return RadarConfig(
       id: json['id'] as String,
       name: json['name'] as String,
-      keyword: json['keyword'] as String,
+      keywords: keywords,
       selectedOrgIds: List<String>.from(json['selectedOrgIds'] as List),
       startDate: json['startDate'] != null ? DateTime.parse(json['startDate'] as String) : null,
       endDate: json['endDate'] != null ? DateTime.parse(json['endDate'] as String) : null,
@@ -90,11 +99,12 @@ class RadarConfig {
     List<ScheduleTime>? scheduleTimes,
     String? avatarPath,
     TimeRangeType? timeRangeType,
+    List<String>? keywords,
   }) {
     return RadarConfig(
       id: id,
       name: name,
-      keyword: keyword,
+      keywords: keywords ?? this.keywords,
       selectedOrgIds: selectedOrgIds,
       startDate: startDate,
       endDate: endDate,

@@ -16,68 +16,66 @@ class OrgChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected 
+              ? primaryColor.withOpacity(0.08)
+              : Colors.grey.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
             color: isSelected 
-                ? primaryColor.withOpacity(0.08)
-                : Colors.grey.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected 
-                  ? primaryColor.withOpacity(0.35)
-                  : Colors.grey.withOpacity(0.15),
-              width: 1.2,
-            ),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: primaryColor.withOpacity(0.08),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : [],
+                ? primaryColor.withOpacity(0.35)
+                : Colors.grey.withOpacity(0.15),
+            width: 1.2,
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: isSelected ? primaryColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(
-                    color: isSelected 
-                        ? primaryColor
-                        : Colors.grey.withOpacity(0.3),
-                    width: 1.5,
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
+                ]
+              : [],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: isSelected ? primaryColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(
+                  color: isSelected 
+                      ? primaryColor
+                      : Colors.grey.withOpacity(0.3),
+                  width: 1.5,
                 ),
-                child: isSelected
-                    ? const Icon(
-                        Icons.check,
-                        size: 9,
-                        color: Colors.white,
-                      )
-                    : null,
               ),
-              const SizedBox(width: 8),
-              Text(
-                org.name,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected ? primaryColor : textSecondary,
-                ),
+              child: isSelected
+                  ? const Icon(
+                      Icons.check,
+                      size: 9,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              org.name,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? primaryColor : textSecondary,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -111,9 +109,9 @@ class OrgChipGrid extends StatelessWidget {
       if (currentRow.length == 2) {
         rows.add(Row(
           children: [
-            currentRow[0],
+            Expanded(child: currentRow[0]),
             const SizedBox(width: 12),
-            currentRow[1],
+            Expanded(child: currentRow[1]),
           ],
         ));
         rows.add(const SizedBox(height: 12));
@@ -122,7 +120,7 @@ class OrgChipGrid extends StatelessWidget {
     });
     
     if (currentRow.isNotEmpty) {
-      rows.add(Row(children: currentRow));
+      rows.add(currentRow[0]);
     }
     
     return Column(

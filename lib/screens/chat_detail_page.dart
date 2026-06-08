@@ -152,7 +152,7 @@ class ChatDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar() {
+  Widget _buildRadarAvatar() {
     if (radarConfig?.avatarPath != null && radarConfig!.avatarPath!.isNotEmpty) {
       return CircleAvatar(
         radius: 20,
@@ -175,17 +175,19 @@ class ChatDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                _buildAvatar(),
-                const SizedBox(width: 8),
-                Text(
-                  '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 12, color: textTertiary),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
+            if (message.type != MessageType.searchComplete || message.clipItem == null)
+              Row(
+                children: [
+                  _buildMessageAvatar(message),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${message.timestamp.month.toString().padLeft(2, '0')}/${message.timestamp.day.toString().padLeft(2, '0')} ${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontSize: 12, color: textTertiary),
+                  ),
+                ],
+              ),
+            if (message.type != MessageType.searchComplete || message.clipItem == null)
+              const SizedBox(height: 8),
             if (message.type == MessageType.searching)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -249,6 +251,27 @@ class ChatDetailPage extends StatelessWidget {
     );
   }
 
+  Widget _buildMessageAvatar(Message message) {
+    if (message.avatarUrl != null && message.avatarUrl!.isNotEmpty) {
+      return CircleAvatar(
+        radius: 20,
+        backgroundColor: primaryColor.withOpacity(0.1),
+        child: ClipOval(
+          child: Image.network(
+            message.avatarUrl!,
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(Icons.person, color: primaryColor, size: 18);
+            },
+          ),
+        ),
+      );
+    }
+    return _buildRadarAvatar();
+  }
+
   Widget _buildClipItem(ClipItem item) {
     return Container(
       margin: const EdgeInsets.only(top: 8),
@@ -265,21 +288,59 @@ class ChatDetailPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            item.title,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '主播: ${item.author.name}',
-                style: const TextStyle(fontSize: 12, color: textSecondary),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  color: primaryColor.withOpacity(0.1),
+                ),
+                child: (item.author.avatar != null && item.author.avatar!.isNotEmpty)
+                    ? ClipOval(
+                        child: Image.network(
+                          item.author.avatar!,
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(Icons.person, color: primaryColor, size: 18);
+                          },
+                        ),
+                      )
+                    : const Icon(Icons.person, color: primaryColor, size: 18),
               ),
-              const SizedBox(width: 16),
-              Text(
-                item.datetime,
-                style: const TextStyle(fontSize: 12, color: textSecondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          '主播: ${item.author.name}',
+                          style: const TextStyle(fontSize: 12, color: textSecondary),
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          item.datetime,
+                          style: const TextStyle(fontSize: 12, color: textSecondary),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

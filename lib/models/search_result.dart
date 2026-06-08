@@ -54,12 +54,28 @@ class Subtitle {
 
 class Author {
   final String name;
+  final String? avatar;
 
-  Author({required this.name});
+  Author({required this.name, this.avatar});
 
   factory Author.fromJson(Map<String, dynamic> json) {
+    String? avatarUrl;
+    
+    if (json.containsKey('avatar') && json['avatar'] != null) {
+      avatarUrl = json['avatar'] as String?;
+    } else if (json.containsKey('avatar_url') && json['avatar_url'] != null) {
+      avatarUrl = json['avatar_url'] as String?;
+    } else if (json.containsKey('avatarUrl') && json['avatarUrl'] != null) {
+      avatarUrl = json['avatarUrl'] as String?;
+    }
+
+    if (avatarUrl != null && avatarUrl.isNotEmpty && !avatarUrl.startsWith('http')) {
+      avatarUrl = 'https://$avatarUrl';
+    }
+
     return Author(
-      name: json['name'] as String,
+      name: json['name'] as String? ?? '',
+      avatar: avatarUrl,
     );
   }
 }

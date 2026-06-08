@@ -181,6 +181,8 @@ Future<void> _executeSearch(RadarConfig radar) async {
           type: MessageType.searchComplete,
           clipItem: item,
           keyword: keyword,
+          avatarUrl: item.author.avatar,
+          authorId: item.author.name,
         ));
       }
     }

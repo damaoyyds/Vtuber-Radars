@@ -75,6 +75,8 @@ class MessageStorage {
       'clipItem': message.clipItem != null ? _clipItemToJson(message.clipItem!) : null,
       'keyword': message.keyword,
       'isRead': message.isRead,
+      'avatarUrl': message.avatarUrl,
+      'authorId': message.authorId,
     };
   }
 
@@ -88,6 +90,8 @@ class MessageStorage {
       clipItem: json['clipItem'] != null ? _clipItemFromJson(json['clipItem']) : null,
       keyword: json['keyword'],
       isRead: json['isRead'] as bool? ?? false,
+      avatarUrl: json['avatarUrl'],
+      authorId: json['authorId'],
     );
   }
 
@@ -95,7 +99,10 @@ class MessageStorage {
     return {
       'id': item.id,
       'title': item.title,
-      'author': {'name': item.author.name},
+      'author': {
+        'name': item.author.name,
+        'avatar': item.author.avatar,
+      },
       'datetime': item.datetime,
       'playUrl': item.playUrl,
       'bilibiliUrl': item.bilibiliUrl,
@@ -106,10 +113,14 @@ class MessageStorage {
   }
 
   static ClipItem _clipItemFromJson(Map<String, dynamic> json) {
+    var authorJson = json['author'] as Map<String, dynamic>;
     return ClipItem(
       id: json['id'],
       title: json['title'],
-      author: Author(name: json['author']['name']),
+      author: Author(
+        name: authorJson['name'] as String? ?? '',
+        avatar: authorJson['avatar'] as String?,
+      ),
       datetime: json['datetime'],
       playUrl: json['playUrl'],
       bilibiliUrl: json['bilibiliUrl'],

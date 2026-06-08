@@ -9,6 +9,8 @@ class Message {
   final ClipItem? clipItem;
   final String? keyword;
   final bool isRead;
+  final String? avatarUrl;
+  final String? authorId;
 
   Message({
     required this.id,
@@ -19,6 +21,8 @@ class Message {
     this.clipItem,
     this.keyword,
     this.isRead = false,
+    this.avatarUrl,
+    this.authorId,
   });
 
   Message copyWith({bool? isRead}) {
@@ -31,6 +35,8 @@ class Message {
       clipItem: clipItem,
       keyword: keyword,
       isRead: isRead ?? this.isRead,
+      avatarUrl: avatarUrl,
+      authorId: authorId,
     );
   }
 }

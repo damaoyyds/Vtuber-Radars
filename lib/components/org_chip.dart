@@ -23,56 +23,57 @@ class OrgChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: isSelected 
-              ? primaryColor.withOpacity(0.08)
-              : Colors.grey.withOpacity(0.05),
+              ? primaryColor.withOpacity(1)
+              : Colors.grey.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected 
-                ? primaryColor.withOpacity(0.35)
+                ? primaryColor
                 : Colors.grey.withOpacity(0.15),
             width: 1.2,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: primaryColor.withOpacity(0.08),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
+                    color: primaryColor.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
                 ]
               : [],
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: isSelected ? primaryColor : Colors.transparent,
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(
-                  color: isSelected 
-                      ? primaryColor
-                      : Colors.grey.withOpacity(0.3),
-                  width: 1.5,
-                ),
+            ClipOval(
+              child: Image.asset(
+                'assests/avatar/${org.id}.webp',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.white.withOpacity(0.2) : Colors.grey.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.group,
+                      size: 16,
+                      color: isSelected ? Colors.white.withOpacity(0.8) : Colors.grey,
+                    ),
+                  );
+                },
               ),
-              child: isSelected
-                  ? const Icon(
-                      Icons.check,
-                      size: 9,
-                      color: Colors.white,
-                    )
-                  : null,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Text(
               org.name,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? primaryColor : textSecondary,
+                color: isSelected ? Colors.white : textSecondary,
               ),
             ),
           ],

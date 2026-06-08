@@ -35,37 +35,38 @@ class ChatDetailPage extends StatelessWidget {
   Widget _buildHighlightedText(String text, String pinyin, String? keyword) {
     List<TextSpan> spans = [];
     String remaining = text;
+    List<int> highlightPositions = [];
 
-    if (pinyin.isNotEmpty) {
-      int index = remaining.indexOf(pinyin);
-      if (index != -1) {
-        if (index > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, index)));
+    List<String> highlights = [];
+    if (pinyin.isNotEmpty) highlights.add(pinyin);
+    if (keyword != null && keyword.isNotEmpty) highlights.add(keyword);
+
+    while (remaining.isNotEmpty) {
+      int earliestIndex = -1;
+      String? foundText;
+      TextStyle? foundStyle;
+
+      for (String highlight in highlights) {
+        int index = remaining.indexOf(highlight);
+        if (index != -1 && (earliestIndex == -1 || index < earliestIndex)) {
+          earliestIndex = index;
+          foundText = highlight;
+          foundStyle = highlight == pinyin 
+              ? const TextStyle(color: Colors.red) 
+              : const TextStyle(color: Colors.blue);
         }
-        spans.add(TextSpan(
-          text: pinyin,
-          style: const TextStyle(color: Colors.red),
-        ));
-        remaining = remaining.substring(index + pinyin.length);
       }
-    }
 
-    if (keyword != null && keyword.isNotEmpty && remaining.contains(keyword)) {
-      int index = remaining.indexOf(keyword);
-      if (index != -1) {
-        if (index > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, index)));
-        }
-        spans.add(TextSpan(
-          text: keyword,
-          style: const TextStyle(color: Colors.blue),
-        ));
-        remaining = remaining.substring(index + keyword.length);
+      if (earliestIndex == -1) {
+        spans.add(TextSpan(text: remaining));
+        break;
       }
-    }
 
-    if (remaining.isNotEmpty) {
-      spans.add(TextSpan(text: remaining));
+      if (earliestIndex > 0) {
+        spans.add(TextSpan(text: remaining.substring(0, earliestIndex)));
+      }
+      spans.add(TextSpan(text: foundText!, style: foundStyle));
+      remaining = remaining.substring(earliestIndex + foundText!.length);
     }
 
     return Text.rich(TextSpan(children: spans));

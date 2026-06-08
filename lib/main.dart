@@ -21,12 +21,14 @@ import './services/radar_storage.dart';
 import './services/data_store_service.dart';
 import './services/message_storage.dart';
 import './services/background_task_service.dart';
+import './services/notification_service.dart';
 import './screens/chat_detail_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SharedPreferences.getInstance();
   await BackgroundTaskService.initialize();
+  await NotificationService().initialize();
   runApp(const MyApp());
 }
 
@@ -1086,14 +1088,17 @@ class _MainScreenState extends State<MainScreen> {
       Set<String> authorNames = allNewItems.map((item) => item.author.name).toSet();
       String authorsText = authorNames.join('、');
       String firstKeyword = radar.keywords.isNotEmpty ? radar.keywords.first : '';
+      String summaryText = '$authorsText 提到了 $firstKeyword';
       
       newMessages.add(Message(
         id: const Uuid().v4(),
         radarName: radar.name,
         timestamp: DateTime.now(),
         type: MessageType.searchComplete,
-        text: '$authorsText 提到了 $firstKeyword',
+        text: summaryText,
       ));
+      
+      NotificationService().showNotification(radar.name, summaryText);
       
       for (var entry in itemsByKeyword.entries) {
         String keyword = entry.key;
@@ -2100,11 +2105,19 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
   }
 
   Future<void> _onSearch() async {
-    if (_keywords.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请至少添加一个搜索关键词')),
-      );
-      return;
+    List<String> searchKeywords = List.from(_keywords);
+    
+    if (searchKeywords.isEmpty) {
+      String inputText = _newKeywordController.text.trim();
+      if (inputText.isNotEmpty) {
+        searchKeywords.add(inputText);
+        _keywords.add(inputText);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请至少添加一个搜索关键词')),
+        );
+        return;
+      }
     }
 
     List<String> selectedOrgIds = _localSelectedOrgs.entries
@@ -2131,7 +2144,7 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
 
       List<ClipItem> allItems = [];
       
-      for (String keyword in _keywords) {
+      for (String keyword in searchKeywords) {
         SearchResult result = await SearchApi.fetchSearchResults(
           keyword,
           selectedOrgIds,
@@ -2176,40 +2189,47 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
     List<TextSpan> spans = [];
     String remaining = text;
 
-    if (pinyin.isNotEmpty) {
-      int index = remaining.indexOf(pinyin);
-      if (index != -1) {
-        if (index > 0) {
-          spans.add(TextSpan(text: remaining.substring(0, index)));
-        }
-        spans.add(TextSpan(
-          text: pinyin,
-          style: const TextStyle(color: Colors.red),
-        ));
-        remaining = remaining.substring(index + pinyin.length);
-      }
-    }
-
     List<String> keywords = keywordsStr.split(',').map((k) => k.trim()).where((k) => k.isNotEmpty).toList();
     
-    for (String keyword in keywords) {
-      if (keyword.isNotEmpty && remaining.contains(keyword)) {
-        int index = remaining.indexOf(keyword);
-        if (index != -1) {
-          if (index > 0) {
-            spans.add(TextSpan(text: remaining.substring(0, index)));
-          }
-          spans.add(TextSpan(
-            text: keyword,
-            style: const TextStyle(color: Colors.blue),
-          ));
-          remaining = remaining.substring(index + keyword.length);
-        }
-      }
+    if (pinyin.isNotEmpty) {
+      keywords.insert(0, pinyin);
     }
 
-    if (remaining.isNotEmpty) {
-      spans.add(TextSpan(text: remaining));
+    while (remaining.isNotEmpty) {
+      int earliestIndex = -1;
+      String matchedKeyword = '';
+      bool isPinyin = false;
+
+      for (int i = 0; i < keywords.length; i++) {
+        String keyword = keywords[i];
+        if (keyword.isEmpty) continue;
+        
+        int index = remaining.indexOf(keyword);
+        if (index != -1 && (earliestIndex == -1 || index < earliestIndex)) {
+          earliestIndex = index;
+          matchedKeyword = keyword;
+          isPinyin = (i == 0 && pinyin.isNotEmpty);
+        }
+      }
+
+      if (earliestIndex == -1) {
+        spans.add(TextSpan(text: remaining));
+        break;
+      }
+
+      if (earliestIndex > 0) {
+        spans.add(TextSpan(text: remaining.substring(0, earliestIndex)));
+      }
+      
+      spans.add(TextSpan(
+        text: matchedKeyword,
+        style: TextStyle(
+          color: isPinyin ? Colors.red : Colors.blue,
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+      
+      remaining = remaining.substring(earliestIndex + matchedKeyword.length);
     }
 
     return Text.rich(TextSpan(children: spans));
@@ -2222,24 +2242,29 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 60),
-          const Text(
-            '搜索',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
+          const SizedBox(height: 24),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text(
+                '搜索',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                '搜索你关注的 VTuber',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: textSecondary,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          const Text(
-            '搜索你关注的 VTuber',
-            style: TextStyle(
-              fontSize: 16,
-              color: textSecondary,
-            ),
-          ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 20),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2303,13 +2328,30 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
             ],
           ),
           const SizedBox(height: 24),
-          const Text(
-            '选择组织:',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                '选择组织:',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: textPrimary,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    bool allSelected = _localSelectedOrgs.values.every((selected) => selected);
+                    _localSelectedOrgs.updateAll((key, value) => !allSelected);
+                  });
+                },
+                child: const Text(
+                  '全选',
+                  style: TextStyle(color: primaryColor, fontSize: 14),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           OrgChipGrid(

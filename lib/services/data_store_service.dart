@@ -64,17 +64,22 @@ class DataStoreService {
 
   static Future<String> getCacheSize() async {
     final prefs = await SharedPreferences.getInstance();
-    final data = prefs.getString(_key);
-    if (data == null || data.isEmpty) {
-      return '0 KB';
+    final allKeys = prefs.getKeys();
+    
+    int totalBytes = 0;
+    for (String key in allKeys) {
+      final value = prefs.getString(key);
+      if (value != null) {
+        totalBytes += value.length * 2;
+      }
     }
-    final bytes = data.length * 2;
-    if (bytes < 1024) {
-      return '${bytes} B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    
+    if (totalBytes < 1024) {
+      return '${totalBytes} B';
+    } else if (totalBytes < 1024 * 1024) {
+      return '${(totalBytes / 1024).toStringAsFixed(1)} KB';
     } else {
-      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
+      return '${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB';
     }
   }
 }

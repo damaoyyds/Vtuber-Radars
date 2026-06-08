@@ -20,7 +20,7 @@ class BottomNavigation extends StatelessWidget {
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.search),
-          label: '发现',
+          label: '搜索',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.message),

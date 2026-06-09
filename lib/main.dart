@@ -11,6 +11,7 @@ import './components/bottom_navigation.dart';
 import './components/add_radar_card.dart';
 import './components/radar_card.dart';
 import './components/org_chip.dart';
+import './components/clip_item_card.dart';
 import './models/radar_config.dart';
 import './models/schedule_time.dart';
 import './models/organization.dart';
@@ -124,12 +125,13 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _scheduleBackgroundAutoSearch() async {
-    for (var radar in _radarConfigs) {
-      if (radar.isAutoSearch && radar.isAutoSearchEnabled) {
-        for (var scheduleTime in radar.scheduleTimes) {
-          await BackgroundTaskService.scheduleAutoSearch(scheduleTime.hour, scheduleTime.minute);
-        }
-      }
+    bool hasAutoSearchEnabled = _radarConfigs.any(
+      (radar) => radar.isAutoSearch && radar.isAutoSearchEnabled
+    );
+    if (hasAutoSearchEnabled) {
+      await BackgroundTaskService.scheduleAutoSearch();
+    } else {
+      await BackgroundTaskService.cancelAutoSearch();
     }
   }
 
@@ -2543,106 +2545,8 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                ..._searchResult!.items.asMap().entries.map((entry) {
-                  int index = entry.key;
-                  ClipItem item = entry.value;
-                  return Container(
-                    decoration: cardDecoration,
-                    padding: const EdgeInsets.all(20),
-                    margin: const EdgeInsets.only(bottom: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '【${index + 1}】${item.title}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Text(
-                              '作者: ${item.author.name}',
-                              style: const TextStyle(color: textSecondary),
-                            ),
-                            const SizedBox(width: 16),
-                            if (item.orgName.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: primaryColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  item.orgName,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: primaryColor,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '时间: ${item.datetime}',
-                          style: const TextStyle(color: textSecondary),
-                        ),
-                        if (item.bilibiliUrl.isNotEmpty)
-                          InkWell(
-                            onTap: () => _launchUrl(item.bilibiliUrl),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                item.bilibiliUrl,
-                                style: const TextStyle(
-                                  color: primaryColor,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (item.subtitles.isNotEmpty)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 12),
-                              Text(
-                                '匹配的字幕:',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              ...item.subtitles.map((subtitle) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 4),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '[${subtitle.formatTime(subtitle.start)} ~ ${subtitle.formatTime(subtitle.end)}]',
-                                        style: const TextStyle(color: textTertiary),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      _buildHighlightedText(
-                                        subtitle.cleanContent,
-                                        subtitle.pinyin,
-                                        _keywords.join(','),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                            ],
-                          ),
-                      ],
-                    ),
-                  );
+                ..._searchResult!.items.map((item) {
+                  return ClipItemCard(item: item);
                 }),
               ],
             ),

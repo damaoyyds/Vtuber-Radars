@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher_string.dart';
+import '../components/clip_item_card.dart';
 import '../models/message.dart';
 import '../models/radar_config.dart';
 import '../models/search_result.dart';
@@ -23,54 +23,7 @@ class ChatDetailPage extends StatelessWidget {
     this.radarConfig,
   });
 
-  String? get _keyword {
-    for (var msg in messages) {
-      if (msg.keyword != null && msg.keyword!.isNotEmpty) {
-        return msg.keyword;
-      }
-    }
-    return null;
-  }
-
-  Widget _buildHighlightedText(String text, String pinyin, String? keyword) {
-    List<TextSpan> spans = [];
-    String remaining = text;
-    List<int> highlightPositions = [];
-
-    List<String> highlights = [];
-    if (pinyin.isNotEmpty) highlights.add(pinyin);
-    if (keyword != null && keyword.isNotEmpty) highlights.add(keyword);
-
-    while (remaining.isNotEmpty) {
-      int earliestIndex = -1;
-      String? foundText;
-      TextStyle? foundStyle;
-
-      for (String highlight in highlights) {
-        int index = remaining.indexOf(highlight);
-        if (index != -1 && (earliestIndex == -1 || index < earliestIndex)) {
-          earliestIndex = index;
-          foundText = highlight;
-          foundStyle = highlight == pinyin 
-              ? const TextStyle(color: Colors.red) 
-              : const TextStyle(color: Colors.blue);
-        }
-      }
-
-      if (earliestIndex == -1) {
-        spans.add(TextSpan(text: remaining));
-        break;
-      }
-
-      if (earliestIndex > 0) {
-        spans.add(TextSpan(text: remaining.substring(0, earliestIndex)));
-      }
-      spans.add(TextSpan(text: foundText!, style: foundStyle));
-      remaining = remaining.substring(earliestIndex + foundText!.length);
-    }
-
-    return Text.rich(TextSpan(children: spans));
-  }
+  
 
   @override
   Widget build(BuildContext context) {
@@ -274,142 +227,6 @@ class ChatDetailPage extends StatelessWidget {
   }
 
   Widget _buildClipItem(ClipItem item) {
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(8),
-          topRight: Radius.circular(16),
-          bottomLeft: Radius.circular(16),
-          bottomRight: Radius.circular(16),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: primaryColor.withOpacity(0.1),
-                ),
-                child: (item.author.avatar != null && item.author.avatar!.isNotEmpty)
-                    ? ClipOval(
-                        child: Image.network(
-                          item.author.avatar!,
-                          width: 36,
-                          height: 36,
-                          fit: BoxFit.cover,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Icon(Icons.person, color: primaryColor, size: 18);
-                          },
-                        ),
-                      )
-                    : const Icon(Icons.person, color: primaryColor, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(
-                          '主播: ${item.author.name}',
-                          style: const TextStyle(fontSize: 12, color: textSecondary),
-                        ),
-                        const SizedBox(width: 16),
-                        Text(
-                          item.datetime,
-                          style: const TextStyle(fontSize: 12, color: textSecondary),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (item.subtitles.isNotEmpty)
-            if (item.bilibiliUrl != null)
-            InkWell(
-              onTap: () => _launchUrl(item.bilibiliUrl),
-              child: Text(
-                item.bilibiliUrl!,
-                style: const TextStyle(fontSize: 12, color: primaryColor),
-              ),
-            ),
-          const SizedBox(height: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '匹配的字幕 (${item.subtitles.length}条):',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              ...item.subtitles.map((subtitle) {
-                return Padding(
-                  padding: const EdgeInsets.only(left: 12, bottom: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '[${subtitle.formatTime(subtitle.start)} ~ ${subtitle.formatTime(subtitle.end)}]',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                      _buildHighlightedText(subtitle.cleanContent, subtitle.pinyin, _keyword),
-                    ],
-                  ),
-                );
-              }),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _launchUrl(String? url) async {
-    if (url == null) return;
-
-    if (url.contains('bilibili.com/video/')) {
-      String? videoId = _extractBilibiliVideoId(url);
-      if (videoId != null) {
-        String bilibiliScheme = 'bilibili://video/$videoId';
-        if (await canLaunchUrlString(bilibiliScheme)) {
-          await launchUrlString(bilibiliScheme);
-          return;
-        }
-      }
-    }
-
-    if (await canLaunchUrlString(url)) {
-      await launchUrlString(url);
-    }
-  }
-
-  String? _extractBilibiliVideoId(String url) {
-    RegExp regex = RegExp(r'bilibili\.com/video/([A-Za-z0-9]+)');
-    Match? match = regex.firstMatch(url);
-    if (match != null && match.groupCount >= 1) {
-      return match.group(1);
-    }
-    return null;
+    return ClipItemCard(item: item);
   }
 }

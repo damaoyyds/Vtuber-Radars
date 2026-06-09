@@ -18,17 +18,15 @@ class BackgroundTaskService {
     );
   }
 
-  static Future<void> scheduleAutoSearch(int hour, int minute) async {
+  static Future<void> scheduleAutoSearch() async {
     await Workmanager().cancelByUniqueName(autoSearchTask);
     
-    DateTime now = DateTime.now();
-    DateTime scheduledTime = DateTime(now.year, now.month, now.day, hour, minute);
+    DateTime nextRunTime = await _calculateNextRunTime();
+    Duration delay = nextRunTime.difference(DateTime.now());
     
-    if (scheduledTime.isBefore(now)) {
-      scheduledTime = scheduledTime.add(const Duration(days: 1));
+    if (delay.isNegative) {
+      delay = Duration.zero;
     }
-    
-    Duration delay = scheduledTime.difference(now);
     
     await Workmanager().registerOneOffTask(
       autoSearchTask,
@@ -36,8 +34,43 @@ class BackgroundTaskService {
       initialDelay: delay,
       constraints: Constraints(
         networkType: NetworkType.connected,
+        requiresDeviceIdle: false,
+        requiresCharging: false,
       ),
     );
+  }
+  
+  static Future<DateTime> _calculateNextRunTime() async {
+    final configs = await RadarStorage.getRadarConfigs();
+    DateTime now = DateTime.now();
+    DateTime nextRunTime = now.add(const Duration(days: 1));
+    
+    for (var radar in configs) {
+      if (radar.isAutoSearch && radar.isAutoSearchEnabled) {
+        for (var scheduleTime in radar.scheduleTimes) {
+          DateTime scheduledTime = DateTime(
+            now.year,
+            now.month,
+            now.day,
+            scheduleTime.hour,
+            scheduleTime.minute,
+          );
+          
+          if (scheduledTime.isAfter(now)) {
+            if (scheduledTime.isBefore(nextRunTime)) {
+              nextRunTime = scheduledTime;
+            }
+          } else {
+            DateTime tomorrowScheduledTime = scheduledTime.add(const Duration(days: 1));
+            if (tomorrowScheduledTime.isBefore(nextRunTime)) {
+              nextRunTime = tomorrowScheduledTime;
+            }
+          }
+        }
+      }
+    }
+    
+    return nextRunTime;
   }
 
   static Future<void> cancelAutoSearch() async {
@@ -51,6 +84,7 @@ void callbackDispatcher() {
     switch (task) {
       case autoSearchTask:
         await _performBackgroundSearch();
+        await BackgroundTaskService.scheduleAutoSearch();
         break;
     }
     return Future.value(true);
@@ -66,7 +100,7 @@ Future<void> _performBackgroundSearch() async {
         final now = DateTime.now();
         
         for (var scheduleTime in radar.scheduleTimes) {
-          final todayScheduledTime = DateTime(
+          DateTime todayScheduledTime = DateTime(
             now.year,
             now.month,
             now.day,
@@ -76,16 +110,17 @@ Future<void> _performBackgroundSearch() async {
           
           final lastAutoSearchTime = await RadarStorage.getLastAutoSearchTime(radar.id, scheduleTime);
           
-          bool alreadyRanToday = false;
+          bool hasRunToday = false;
           if (lastAutoSearchTime != null) {
-            alreadyRanToday = lastAutoSearchTime.year == now.year &&
+            hasRunToday = lastAutoSearchTime.year == now.year &&
                 lastAutoSearchTime.month == now.month &&
                 lastAutoSearchTime.day == now.day;
           }
           
-          bool shouldRun = !alreadyRanToday && 
-              now.isAfter(todayScheduledTime) &&
-              now.difference(todayScheduledTime).inMinutes >= 1;
+          bool isAfterScheduledTime = now.isAfter(todayScheduledTime) || 
+              now.isAtSameMomentAs(todayScheduledTime);
+          
+          bool shouldRun = isAfterScheduledTime && !hasRunToday;
           
           if (shouldRun) {
             await _executeSearch(radar);

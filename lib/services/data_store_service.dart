@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/data_store.dart';
 import '../models/search_result.dart';
@@ -64,13 +66,20 @@ class DataStoreService {
 
   static Future<String> getCacheSize() async {
     final prefs = await SharedPreferences.getInstance();
-    final allKeys = prefs.getKeys();
+    final jsonString = prefs.getString(_key);
     
     int totalBytes = 0;
-    for (String key in allKeys) {
-      final value = prefs.getString(key);
-      if (value != null) {
-        totalBytes += value.length * 2;
+    if (jsonString != null) {
+      totalBytes += jsonString.length * 2;
+    }
+    
+    final cacheDir = await getTemporaryDirectory();
+    if (await cacheDir.exists()) {
+      List<FileSystemEntity> files = cacheDir.listSync();
+      for (var file in files) {
+        if (file is File && file.path.endsWith('.png')) {
+          totalBytes += await file.length();
+        }
       }
     }
     

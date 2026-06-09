@@ -23,6 +23,7 @@ import './services/message_storage.dart';
 import './services/background_task_service.dart';
 import './services/notification_service.dart';
 import './screens/chat_detail_page.dart';
+import './screens/create_radar_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -722,6 +723,9 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          AddRadarCard(
+            onTap: () => _showCreateRadarDialog(),
+          ),
           ..._radarConfigs.map((radar) {
             return RadarCard(
               radar: radar,
@@ -739,9 +743,6 @@ class _MainScreenState extends State<MainScreen> {
               showCheckbox: _isSelectMode,
             );
           }),
-          AddRadarCard(
-            onTap: () => _showCreateRadarDialog(),
-          ),
           if (_isSelectMode && _selectedRadarIds.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(top: 16),
@@ -1057,7 +1058,7 @@ class _MainScreenState extends State<MainScreen> {
     String? startDateStr = effectiveStartDate.toIso8601String().split('T')[0];
     String? endDateStr = effectiveEndDate.toIso8601String().split('T')[0];
 
-    List<ClipItem> allNewItems = [];
+    List<ClipItem> allItems = [];
     Map<String, List<ClipItem>> itemsByKeyword = {};
 
     for (String keyword in radar.keywords) {
@@ -1067,13 +1068,15 @@ class _MainScreenState extends State<MainScreen> {
         startDate: startDateStr,
         endDate: endDateStr,
       );
-
-      List<ClipItem> newItems = await DataStoreService.findNewItems(radar.id, result.items);
-      await DataStoreService.addItemsToStore(radar.id, newItems);
       
-      allNewItems.addAll(newItems);
-      itemsByKeyword[keyword] = newItems;
+      allItems.addAll(result.items);
+      itemsByKeyword[keyword] = result.items;
     }
+
+    List<ClipItem> allNewItems = await DataStoreService.findNewItems(radar.id, allItems);
+    await DataStoreService.addItemsToStore(radar.id, allNewItems);
+
+    Set<String> newItemIds = allNewItems.map((item) => item.id).toSet();
 
     List<Message> newMessages = [];
     if (allNewItems.isEmpty) {
@@ -1105,16 +1108,18 @@ class _MainScreenState extends State<MainScreen> {
         List<ClipItem> items = entry.value;
         
         for (var item in items) {
-          newMessages.add(Message(
-            id: const Uuid().v4(),
-            radarName: radar.name,
-            timestamp: DateTime.now(),
-            type: MessageType.searchComplete,
-            clipItem: item,
-            keyword: keyword,
-            avatarUrl: item.author.avatar,
-            authorId: item.author.name,
-          ));
+          if (newItemIds.contains(item.id)) {
+            newMessages.add(Message(
+              id: const Uuid().v4(),
+              radarName: radar.name,
+              timestamp: DateTime.now(),
+              type: MessageType.searchComplete,
+              clipItem: item,
+              keyword: keyword,
+              avatarUrl: item.author.avatar,
+              authorId: item.author.name,
+            ));
+          }
         }
       }
     }
@@ -1260,6 +1265,20 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _showCreateRadarDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CreateRadarPage()),
+    ).then((_) => _loadRadarConfigs());
+  }
+
+  void _showEditRadarDialog(RadarConfig radar) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => CreateRadarPage(radar: radar)),
+    ).then((_) => _loadRadarConfigs());
+  }
+
+  void _showOldCreateRadarDialog() {
     showDialog(
       context: context,
       builder: (context) {
@@ -1286,7 +1305,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  void _showEditRadarDialog(RadarConfig radar) {
+  void _showOldEditRadarDialog(RadarConfig radar) {
     showDialog(
       context: context,
       builder: (context) {
@@ -2104,6 +2123,14 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
     }
   }
 
+  void _setTimeRange(int days) {
+    setState(() {
+      _localEndDate = DateTime.now();
+      _localStartDate = DateTime.now().subtract(Duration(days: days));
+    });
+    widget.onDateChanged(_localStartDate, _localEndDate);
+  }
+
   Future<void> _onSearch() async {
     List<String> searchKeywords = List.from(_keywords);
     
@@ -2364,6 +2391,58 @@ class _SearchScreenWithStateState extends State<SearchScreenWithState> {
             },
           ),
           const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _setTimeRange(1),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: cardBg,
+                    foregroundColor: textPrimary,
+                    side: BorderSide(color: cardBorder, width: 1),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(borderRadius),
+                    ),
+                  ),
+                  child: const Text('前一天'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _setTimeRange(7),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: cardBg,
+                    foregroundColor: textPrimary,
+                    side: BorderSide(color: cardBorder, width: 1),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(borderRadius),
+                    ),
+                  ),
+                  child: const Text('前七天'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _setTimeRange(30),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: cardBg,
+                    foregroundColor: textPrimary,
+                    side: BorderSide(color: cardBorder, width: 1),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(borderRadius),
+                    ),
+                  ),
+                  child: const Text('前三十天'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(

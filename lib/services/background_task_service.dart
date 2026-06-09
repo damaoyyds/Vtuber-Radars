@@ -3,6 +3,7 @@ import './radar_storage.dart';
 import './search_api.dart';
 import './data_store_service.dart';
 import './message_storage.dart';
+import './notification_service.dart';
 import '../models/radar_config.dart';
 import '../models/message.dart';
 import '../models/search_result.dart';
@@ -54,7 +55,7 @@ class BackgroundTaskService {
             now.day,
             scheduleTime.hour,
             scheduleTime.minute,
-          );
+          ).subtract(const Duration(minutes: 1));
           
           if (scheduledTime.isAfter(now)) {
             if (scheduledTime.isBefore(nextRunTime)) {
@@ -83,6 +84,7 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     switch (task) {
       case autoSearchTask:
+        await NotificationService().initialize();
         await _performBackgroundSearch();
         await BackgroundTaskService.scheduleAutoSearch();
         break;
@@ -117,10 +119,11 @@ Future<void> _performBackgroundSearch() async {
                 lastAutoSearchTime.day == now.day;
           }
           
-          bool isAfterScheduledTime = now.isAfter(todayScheduledTime) || 
-              now.isAtSameMomentAs(todayScheduledTime);
+          DateTime timeToCheck = todayScheduledTime.subtract(const Duration(minutes: 1));
+          bool isAfterSearchTime = now.isAfter(timeToCheck) || 
+              now.isAtSameMomentAs(timeToCheck);
           
-          bool shouldRun = isAfterScheduledTime && !hasRunToday;
+          bool shouldRun = isAfterSearchTime && !hasRunToday;
           
           if (shouldRun) {
             await _executeSearch(radar);
@@ -226,4 +229,11 @@ Future<void> _executeSearch(RadarConfig radar) async {
   List<Message> existingMessages = await MessageStorage.loadMessages();
   existingMessages.insertAll(0, newMessages);
   await MessageStorage.saveMessages(existingMessages);
+  
+  if (allNewItems.isNotEmpty) {
+    await NotificationService().showNotification(
+      'Vtuber Radar',
+      '${radar.name} 搜索到 ${allNewItems.length} 条新数据',
+    );
+  }
 }

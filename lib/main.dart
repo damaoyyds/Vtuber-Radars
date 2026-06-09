@@ -4,14 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:uuid/uuid.dart';
 import './theme/app_theme.dart';
 import './components/bottom_navigation.dart';
 import './components/add_radar_card.dart';
 import './components/radar_card.dart';
 import './components/org_chip.dart';
-import './components/clip_item_card.dart';
 import './screens/search_screen.dart';
 import './models/radar_config.dart';
 import './models/schedule_time.dart';
@@ -716,13 +714,25 @@ class _MainScreenState extends State<MainScreen> {
             ],
           ),
           const SizedBox(height: 28),
-          const Text(
-            '雷达列表',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: textPrimary,
-            ),
+          Row(
+            children: const [
+              Text(
+                '雷达列表',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: textPrimary,
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                '双击可编辑雷达信息',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textSecondary,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           AddRadarCard(
@@ -1295,6 +1305,7 @@ class _MainScreenState extends State<MainScreen> {
               endDate: endDate,
               createdAt: DateTime.now(),
               isAutoSearch: isAutoSearch,
+              isAutoSearchEnabled: isAutoSearch,
               scheduleTimes: scheduleTimes,
               avatarPath: avatarPath,
               timeRangeType: timeRangeType,

@@ -70,13 +70,66 @@ class RadarCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: CircleAvatar(
-                radius: 32,
-                backgroundImage: radar.avatarPath != null
-                    ? FileImage(File(radar.avatarPath!))
-                    : const NetworkImage(
-                        'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=anime%20girl%20avatar%20cute%20blue%20hair&image_size=square',
-                      ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(32),
+                  onTap: radar.isAutoSearch && onToggleAutoSearch != null
+                      ? onToggleAutoSearch
+                      : null,
+                  child: CircleAvatar(
+                    radius: 32,
+                    backgroundImage: radar.avatarPath != null
+                        ? FileImage(File(radar.avatarPath!))
+                        : const NetworkImage(
+                            'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=anime%20girl%20avatar%20cute%20blue%20hair&image_size=square',
+                          ),
+                    child: radar.isAutoSearch
+                        ? Stack(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(32),
+                                ),
+                              ),
+                              Center(
+                                child: Icon(
+                                  radar.isAutoSearchEnabled
+                                      ? Icons.play_arrow
+                                      : Icons.pause,
+                                  color: Colors.white,
+                                  size: 24,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Colors.black26,
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Align(
+                                alignment: Alignment.bottomRight,
+                                child: Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                    color: radar.isAutoSearchEnabled
+                                        ? const Color(0xFF10B981)
+                                        : const Color(0xFFF59E0B),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : null,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -155,68 +208,30 @@ class RadarCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: primaryColor.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: primaryColor.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
-                      onTap: onSearch,
-                      child: const Padding(
-                        padding: EdgeInsets.all(14),
-                        child: Icon(
-                          Icons.search,
-                          color: primaryColor,
-                          size: 22,
-                        ),
-                      ),
+            Container(
+              decoration: BoxDecoration(
+                color: primaryColor.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: primaryColor.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: onSearch,
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: Icon(
+                      Icons.search,
+                      color: primaryColor,
+                      size: 22,
                     ),
                   ),
                 ),
-                if (radar.isAutoSearch && onToggleAutoSearch != null)
-                  const SizedBox(width: 8),
-                if (radar.isAutoSearch && onToggleAutoSearch != null)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: radar.isAutoSearchEnabled 
-                          ? const Color(0xFF10B981).withOpacity(0.1)
-                          : const Color(0xFFF59E0B).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: radar.isAutoSearchEnabled
-                            ? const Color(0xFF10B981).withOpacity(0.3)
-                            : const Color(0xFFF59E0B).withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: onToggleAutoSearch!,
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Icon(
-                            radar.isAutoSearchEnabled ? Icons.pause : Icons.play_arrow,
-                            color: radar.isAutoSearchEnabled 
-                                ? const Color(0xFF10B981) 
-                                : const Color(0xFFF59E0B),
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ],
         ),

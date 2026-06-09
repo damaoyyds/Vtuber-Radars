@@ -25,11 +25,14 @@ class CreateRadarPage extends StatefulWidget {
 class _TimePointState {
   int hour;
   int minute;
+  final TextEditingController hourController;
+  final TextEditingController minuteController;
 
   _TimePointState({
     required this.hour,
     required this.minute,
-  });
+  }) : hourController = TextEditingController(text: hour.toString().padLeft(2, '0')),
+        minuteController = TextEditingController(text: minute.toString().padLeft(2, '0'));
 }
 
 class _CreateRadarPageState extends State<CreateRadarPage> {
@@ -632,85 +635,113 @@ class _CreateRadarPageState extends State<CreateRadarPage> {
               ..._timePoints.asMap().entries.map((entry) {
                 int index = entry.key;
                 _TimePointState timePoint = entry.value;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              decoration: cardDecoration,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Center(
-                                child: DropdownButton<int>(
-                                  value: timePoint.hour,
-                                  items: List.generate(24, (i) => i).map((hour) {
-                                    return DropdownMenuItem(
-                                      value: hour,
-                                      child: Text('${hour.toString().padLeft(2, '0')}时'),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      timePoint.hour = value!;
-                                    });
-                                  },
-                                  isExpanded: true,
-                                  underline: const SizedBox(),
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(borderRadius),
+                    border: Border.all(color: cardBorder, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: timePoint.hourController,
+                                keyboardType: TextInputType.number,
+                                maxLength: 2,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textPrimary),
+                                decoration: InputDecoration(
+                                  counterText: '',
+                                  hintText: '时',
+                                  hintStyle: const TextStyle(color: textSecondary, fontSize: 14),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
                                 ),
+                                onChanged: (value) {
+                                  int? hour = int.tryParse(value);
+                                  if (hour != null && hour >= 0 && hour <= 23) {
+                                    timePoint.hour = hour;
+                                  } else if (value.isEmpty) {
+                                    timePoint.hour = 0;
+                                  }
+                                },
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Container(
-                              decoration: cardDecoration,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Center(
-                                child: DropdownButton<int>(
-                                  value: timePoint.minute,
-                                  items: [0, 15, 30, 45].map((minute) {
-                                    return DropdownMenuItem(
-                                      value: minute,
-                                      child: Text('${minute.toString().padLeft(2, '0')}分'),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      timePoint.minute = value!;
-                                    });
-                                  },
-                                  isExpanded: true,
-                                  underline: const SizedBox(),
+                            const SizedBox(width: 8),
+                            const Text(
+                              ':',
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: primaryColor),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: timePoint.minuteController,
+                                keyboardType: TextInputType.number,
+                                maxLength: 2,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textPrimary),
+                                decoration: InputDecoration(
+                                  counterText: '',
+                                  hintText: '分',
+                                  hintStyle: const TextStyle(color: textSecondary, fontSize: 14),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
                                 ),
+                                onChanged: (value) {
+                                  int? minute = int.tryParse(value);
+                                  if (minute != null && minute >= 0 && minute <= 59) {
+                                    timePoint.minute = minute;
+                                  } else if (value.isEmpty) {
+                                    timePoint.minute = 0;
+                                  }
+                                },
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () => _removeScheduleTime(index),
-                      color: Colors.red,
-                    ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        onPressed: () => _removeScheduleTime(index),
+                        color: textSecondary,
+                        hoverColor: Colors.red,
+                      ),
+                    ],
+                  ),
                 );
               }).toList(),
               const SizedBox(height: 8),
               if (_timePoints.length < 10)
-                ElevatedButton(
-                  onPressed: _addScheduleTime,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: cardBg,
-                    foregroundColor: primaryColor,
-                    side: BorderSide(color: primaryColor, width: 1),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(borderRadius),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: primaryColor, width: 2),
+                    borderRadius: BorderRadius.circular(borderRadius),
+                  ),
+                  child: ElevatedButton(
+                    onPressed: _addScheduleTime,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: primaryColor,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(borderRadius),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add, size: 20),
+                        SizedBox(width: 8),
+                        Text('添加时间点', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                      ],
                     ),
                   ),
-                  child: const Text('添加时间点'),
                 ),
             ],
             const SizedBox(height: 32),

@@ -96,8 +96,8 @@ class RadarCard extends StatelessWidget {
                               Center(
                                 child: Icon(
                                   radar.isAutoSearchEnabled
-                                      ? Icons.play_arrow
-                                      : Icons.pause,
+                                      ? Icons.pause
+                                      : Icons.play_arrow,
                                   color: Colors.white,
                                   size: 24,
                                   shadows: const [

@@ -48,7 +48,7 @@ class SearchApi {
     String keyword,
     List<String> orgIds, {
     int page = 1,
-    int pageSize = 10,
+    int pageSize = 50,
     String? startDate,
     String? endDate,
   }) async {
@@ -115,6 +115,11 @@ class SearchApi {
 
               String clipId = itemMap['id']?.toString() ?? '';
               List<Subtitle> subtitles = await _findMatchingSubtitles(baseUrl, clipId, keyword);
+              
+              if (subtitles.isEmpty) {
+                continue;
+              }
+              
               itemMap['subtitles'] = subtitles.map((s) => s.toJson()).toList();
 
               results.add(ClipItem.fromJson(itemMap));

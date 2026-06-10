@@ -22,17 +22,11 @@ class BackgroundTaskService {
   static Future<void> scheduleAutoSearch() async {
     await Workmanager().cancelByUniqueName(autoSearchTask);
     
-    DateTime nextRunTime = await _calculateNextRunTime();
-    Duration delay = nextRunTime.difference(DateTime.now());
-    
-    if (delay.isNegative) {
-      delay = Duration.zero;
-    }
-    
-    await Workmanager().registerOneOffTask(
+    await Workmanager().registerPeriodicTask(
       autoSearchTask,
       autoSearchTask,
-      initialDelay: delay,
+      frequency: const Duration(minutes: 1),
+      initialDelay: const Duration(minutes: 1),
       constraints: Constraints(
         networkType: NetworkType.connected,
         requiresDeviceIdle: false,
@@ -86,7 +80,6 @@ void callbackDispatcher() {
       case autoSearchTask:
         await NotificationService().initialize();
         await _performBackgroundSearch();
-        await BackgroundTaskService.scheduleAutoSearch();
         break;
     }
     return Future.value(true);
@@ -110,24 +103,12 @@ Future<void> _performBackgroundSearch() async {
             scheduleTime.minute,
           );
           
-          final lastAutoSearchTime = await RadarStorage.getLastAutoSearchTime(radar.id, scheduleTime);
-          
-          bool hasRunToday = false;
-          if (lastAutoSearchTime != null) {
-            hasRunToday = lastAutoSearchTime.year == now.year &&
-                lastAutoSearchTime.month == now.month &&
-                lastAutoSearchTime.day == now.day;
-          }
-          
           DateTime timeToCheck = todayScheduledTime.subtract(const Duration(minutes: 1));
           bool isAfterSearchTime = now.isAfter(timeToCheck) || 
               now.isAtSameMomentAs(timeToCheck);
           
-          bool shouldRun = isAfterSearchTime && !hasRunToday;
-          
-          if (shouldRun) {
+          if (isAfterSearchTime) {
             await _executeSearch(radar);
-            await RadarStorage.setLastAutoSearchTime(radar.id, scheduleTime, now);
           }
         }
       }

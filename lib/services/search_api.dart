@@ -5,6 +5,7 @@ import 'package:vtuber_radar/models/search_result.dart';
 
 class SearchApi {
   static List<String> _apiBaseUrls = [
+    "https://api.zimu.live:7443",
     "https://api.zimu.live",
   ];
 

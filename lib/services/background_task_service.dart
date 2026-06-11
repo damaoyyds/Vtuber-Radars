@@ -103,12 +103,20 @@ Future<void> _performBackgroundSearch() async {
             scheduleTime.minute,
           );
           
-          DateTime timeToCheck = todayScheduledTime.subtract(const Duration(minutes: 1));
-          bool isAfterSearchTime = now.isAfter(timeToCheck) || 
-              now.isAtSameMomentAs(timeToCheck);
+          final lastAutoSearchTime = await RadarStorage.getLastAutoSearchTime(radar.id, scheduleTime);
+          bool alreadyRanToday = false;
+          if (lastAutoSearchTime != null) {
+            alreadyRanToday = lastAutoSearchTime.year == now.year &&
+                lastAutoSearchTime.month == now.month &&
+                lastAutoSearchTime.day == now.day;
+          }
           
-          if (isAfterSearchTime) {
+          bool isAfterSearchTime = now.isAfter(todayScheduledTime) || 
+              now.isAtSameMomentAs(todayScheduledTime);
+          
+          if (isAfterSearchTime && !alreadyRanToday) {
             await _executeSearch(radar);
+            await RadarStorage.setLastAutoSearchTime(radar.id, scheduleTime, now);
           }
         }
       }

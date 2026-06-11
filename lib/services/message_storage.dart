@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/message.dart';
@@ -5,64 +6,134 @@ import '../models/search_result.dart';
 
 class MessageStorage {
   static const String _key = 'vtuber_radar_messages';
+  static final _lock = _StorageLock();
+
+  static const int _maxMessages = 1000;
 
   static Future<List<Message>> loadMessages() async {
+    return _lock.execute(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final jsonString = prefs.getString(_key);
+        if (jsonString == null) {
+          return [];
+        }
+        final List<dynamic> data = json.decode(jsonString);
+        return data.map((item) => _messageFromJson(item)).toList();
+      } catch (e, stackTrace) {
+        print('MessageStorage.loadMessages error: $e\n$stackTrace');
+        return [];
+      }
+    });
+  }
+
+  static Future<void> saveMessages(List<Message> messages) async {
+    return _lock.execute(() async {
+      try {
+        if (messages.length > _maxMessages) {
+          messages = messages.take(_maxMessages).toList();
+        }
+        final prefs = await SharedPreferences.getInstance();
+        final List<Map<String, dynamic>> data = messages.map((msg) => _messageToJson(msg)).toList();
+        await prefs.setString(_key, json.encode(data));
+      } catch (e, stackTrace) {
+        print('MessageStorage.saveMessages error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<void> addMessage(Message message) async {
+    return _lock.execute(() async {
+      try {
+        final messages = await _getMessages();
+        messages.insert(0, message);
+        await _saveMessagesInternal(messages);
+      } catch (e, stackTrace) {
+        print('MessageStorage.addMessage error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<void> addMessages(List<Message> messages) async {
+    return _lock.execute(() async {
+      try {
+        final allMessages = await _getMessages();
+        allMessages.insertAll(0, messages);
+        await _saveMessagesInternal(allMessages);
+      } catch (e, stackTrace) {
+        print('MessageStorage.addMessages error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<void> removeMessage(String messageId) async {
+    return _lock.execute(() async {
+      try {
+        final messages = await _getMessages();
+        messages.removeWhere((msg) => msg.id == messageId);
+        await _saveMessagesInternal(messages);
+      } catch (e, stackTrace) {
+        print('MessageStorage.removeMessage error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<void> removeMessagesByRadarName(String radarName) async {
+    return _lock.execute(() async {
+      try {
+        final messages = await _getMessages();
+        messages.removeWhere((msg) => msg.radarName == radarName);
+        await _saveMessagesInternal(messages);
+      } catch (e, stackTrace) {
+        print('MessageStorage.removeMessagesByRadarName error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<void> clearAllMessages() async {
+    return _lock.execute(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_key);
+      } catch (e, stackTrace) {
+        print('MessageStorage.clearAllMessages error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<void> markMessagesAsRead(String radarName) async {
+    return _lock.execute(() async {
+      try {
+        final messages = await _getMessages();
+        for (var i = 0; i < messages.length; i++) {
+          if (messages[i].radarName == radarName && !messages[i].isRead) {
+            messages[i] = messages[i].copyWith(isRead: true);
+          }
+        }
+        await _saveMessagesInternal(messages);
+      } catch (e, stackTrace) {
+        print('MessageStorage.markMessagesAsRead error: $e\n$stackTrace');
+      }
+    });
+  }
+
+  static Future<List<Message>> _getMessages() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = prefs.getString(_key);
     if (jsonString == null) {
       return [];
     }
-    try {
-      final List<dynamic> data = json.decode(jsonString);
-      return data.map((item) => _messageFromJson(item)).toList();
-    } catch (e) {
-      return [];
-    }
+    final List<dynamic> data = json.decode(jsonString);
+    return data.map((item) => _messageFromJson(item)).toList();
   }
 
-  static Future<void> saveMessages(List<Message> messages) async {
+  static Future<void> _saveMessagesInternal(List<Message> messages) async {
+    if (messages.length > _maxMessages) {
+      messages = messages.take(_maxMessages).toList();
+    }
     final prefs = await SharedPreferences.getInstance();
     final List<Map<String, dynamic>> data = messages.map((msg) => _messageToJson(msg)).toList();
     await prefs.setString(_key, json.encode(data));
-  }
-
-  static Future<void> addMessage(Message message) async {
-    final messages = await loadMessages();
-    messages.insert(0, message);
-    await saveMessages(messages);
-  }
-
-  static Future<void> addMessages(List<Message> messages) async {
-    final allMessages = await loadMessages();
-    allMessages.insertAll(0, messages);
-    await saveMessages(allMessages);
-  }
-
-  static Future<void> removeMessage(String messageId) async {
-    final messages = await loadMessages();
-    messages.removeWhere((msg) => msg.id == messageId);
-    await saveMessages(messages);
-  }
-
-  static Future<void> removeMessagesByRadarName(String radarName) async {
-    final messages = await loadMessages();
-    messages.removeWhere((msg) => msg.radarName == radarName);
-    await saveMessages(messages);
-  }
-
-  static Future<void> clearAllMessages() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
-  }
-
-  static Future<void> markMessagesAsRead(String radarName) async {
-    final messages = await loadMessages();
-    for (var i = 0; i < messages.length; i++) {
-      if (messages[i].radarName == radarName && !messages[i].isRead) {
-        messages[i] = messages[i].copyWith(isRead: true);
-      }
-    }
-    await saveMessages(messages);
   }
 
   static Map<String, dynamic> _messageToJson(Message message) {
@@ -113,20 +184,20 @@ class MessageStorage {
   }
 
   static ClipItem _clipItemFromJson(Map<String, dynamic> json) {
-    var authorJson = json['author'] as Map<String, dynamic>;
+    var authorJson = json['author'] as Map<String, dynamic>? ?? {};
     return ClipItem(
-      id: json['id'],
-      title: json['title'],
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
       author: Author(
         name: authorJson['name'] as String? ?? '',
         avatar: authorJson['avatar'] as String?,
       ),
-      datetime: json['datetime'],
-      playUrl: json['playUrl'],
-      bilibiliUrl: json['bilibiliUrl'],
-      orgName: json['orgName'],
-      orgId: json['orgId'],
-      subtitles: (json['subtitles'] as List).map((sub) => _subtitleFromJson(sub)).toList(),
+      datetime: json['datetime'] as String? ?? '',
+      playUrl: json['playUrl'] as String? ?? '',
+      bilibiliUrl: json['bilibiliUrl'] as String? ?? '',
+      orgName: json['orgName'] as String? ?? '',
+      orgId: json['orgId'] as String? ?? '',
+      subtitles: (json['subtitles'] as List? ?? []).map((sub) => _subtitleFromJson(sub)).toList(),
     );
   }
 
@@ -144,13 +215,33 @@ class MessageStorage {
 
   static Subtitle _subtitleFromJson(Map<String, dynamic> json) {
     return Subtitle(
-      clipId: json['clipId'],
-      start: json['start'],
-      end: json['end'],
-      markedContent: json['markedContent'],
-      cleanContent: json['cleanContent'],
-      pinyin: json['pinyin'],
-      text: json['text'],
+      clipId: json['clipId'] as String? ?? '',
+      start: (json['start'] as num?)?.toInt() ?? 0,
+      end: (json['end'] as num?)?.toInt() ?? 0,
+      markedContent: json['markedContent'] as String? ?? '',
+      cleanContent: json['cleanContent'] as String? ?? '',
+      pinyin: json['pinyin'] as String? ?? '',
+      text: json['text'] as String? ?? '',
     );
+  }
+}
+
+class _StorageLock {
+  Completer<void>? _currentTask;
+
+  Future<T> execute<T>(Future<T> Function() action) async {
+    while (_currentTask != null) {
+      await _currentTask!.future;
+    }
+
+    final completer = Completer<void>();
+    _currentTask = completer;
+
+    try {
+      return await action();
+    } finally {
+      _currentTask = null;
+      completer.complete();
+    }
   }
 }
